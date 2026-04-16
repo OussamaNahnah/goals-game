@@ -489,12 +489,11 @@
   }
 
   // Auto-play: call nextStep on an interval.
-  const PLAY_INTERVAL = 900; // ms between steps
+  const PLAY_INTERVAL = 720; // 1.25× speed
   function startPlay() {
     if (playing) return;
     playing = true;
     updatePlayBtn();
-    // Fire immediately then repeat
     nextStep();
     playTimer = setInterval(() => {
       if (!playing) return;
@@ -545,6 +544,74 @@
     }
   }
 
+  // --- Grid-size helpers ---
+  function colsToBounds(n) {
+    const half = Math.floor(n / 2);
+    return n % 2 === 1
+      ? { min: -half,      max: half      }   // odd: symmetric
+      : { min: -half,      max: half - 1  };  // even: one extra on negative side
+  }
+
+  function computeGridSizes() {
+    const vis      = parseInt(document.getElementById('visibility-input')?.value) ||
+                     (typeof defaultVisibility  !== 'undefined' ? defaultVisibility  : 1);
+    const nRobots  = typeof defaultNumRobots !== 'undefined' ? defaultNumRobots : 3;
+    const B = vis * (nRobots + 1) + 3;
+    return [
+      [B,   B  ], [B,   B+1], [B,   B+2],
+      [B+1, B  ], [B+1, B+1], [B+1, B+2],
+      [B+2, B  ], [B+2, B+1],
+    ].map(([cols, rows]) => {
+      const xb = colsToBounds(cols);
+      const yb = colsToBounds(rows);
+      return { cols, rows, xmin: xb.min, xmax: xb.max, ymin: yb.min, ymax: yb.max };
+    });
+  }
+
+  function applyGridSize(size) {
+    document.getElementById('boundary-xmin').value = size.xmin;
+    document.getElementById('boundary-xmax').value = size.xmax;
+    document.getElementById('boundary-ymin').value = size.ymin;
+    document.getElementById('boundary-ymax').value = size.ymax;
+    applyBoundaries();
+  }
+
+  function populateGridSizeSelect() {
+    const sel = document.getElementById('grid-size-select');
+    if (!sel) return;
+    const sizes = computeGridSizes();
+    const prevVal = sel.value;
+    sel.innerHTML = '';
+    sizes.forEach((s, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${s.cols}×${s.rows}  [${s.xmin}→${s.xmax}] [${s.ymin}→${s.ymax}]`;
+      sel.appendChild(opt);
+    });
+    // Separator
+    const sep = document.createElement('option');
+    sep.disabled = true;
+    sep.textContent = '──────────────────';
+    sel.appendChild(sep);
+    // Manual preset: -6→6, -6→6
+    const preset = document.createElement('option');
+    preset.value = 'preset-6';
+    preset.textContent = '13×13  [-6→6] [-6→6]';
+    sel.appendChild(preset);
+    // Restore previous selection if valid, otherwise default to last computed size
+    const restored = parseInt(prevVal);
+    if (!isNaN(restored) && restored < sizes.length) {
+      sel.value = restored;
+      applyGridSize(sizes[restored]);
+    } else if (prevVal === 'preset-6') {
+      sel.value = 'preset-6';
+      // don't re-apply, boundaries already set
+    } else {
+      sel.value = sizes.length - 1;
+      applyGridSize(sizes[sizes.length - 1]);
+    }
+  }
+
   // --- Goal select populate ---
   function populateGoalSelect() {
     const sel = document.getElementById("goal-select");
@@ -558,12 +625,18 @@
         opt.textContent = `Goal ${i + 1}`;
         sel.appendChild(opt);
       });
+      // Auto-select first goal only if there are actual goals in the list
+      if (sel.options.length > 1) {
+        sel.value = '0';
+        loadGoal(0);
+      }
     }
   }
 
   // --- Init (called every time panel opens) ---
   function init() {
     populateGoalSelect();
+    populateGridSizeSelect();
     render();
 
     if (initialized) return;
@@ -594,6 +667,19 @@
       if (!showBoxChk.checked) pendingGoalBox = null;
       render();
     });
+
+    const gridSizeSel = document.getElementById('grid-size-select');
+    if (gridSizeSel) gridSizeSel.addEventListener('change', () => {
+      if (gridSizeSel.value === 'preset-6') {
+        applyGridSize({ xmin: -6, xmax: 6, ymin: -6, ymax: 6 });
+      } else {
+        const sizes = computeGridSizes();
+        applyGridSize(sizes[parseInt(gridSizeSel.value)]);
+      }
+    });
+
+    const visInput = document.getElementById('visibility-input');
+    if (visInput) visInput.addEventListener('change', () => populateGridSizeSelect());
 
     document.addEventListener('keydown', (e) => {
       // Only act when the movement panel is visible

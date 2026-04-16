@@ -6,3 +6,7 @@ const defaultColorList = {
     L: 16711680,
     R: 32768,
 };
+
+// Simulation parameters
+const defaultNumRobots = 2;   // number of robots in the swarm
+const defaultVisibility = 1;  // sensing/visibility radius (in grid units)
