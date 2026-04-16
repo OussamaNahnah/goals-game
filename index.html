@@ -567,6 +567,37 @@
       #movement-grid-canvas {
         cursor: pointer;
       }
+
+      /* === GOAL FRAME HIGHLIGHT === */
+      .goal-index-badge {
+        font-size: 0.72em;
+        font-weight: 700;
+        color: #fff;
+        background: #5f7a99;
+        border-radius: 4px;
+        padding: 1px 7px;
+        margin-right: 8px;
+        flex-shrink: 0;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        transition: background 0.3s ease;
+      }
+
+      @keyframes goalFlashAnim {
+        0%   { box-shadow: 0 0 0 3px #1976d2, 0 0 18px 6px rgba(25,118,210,0.45); border-color: #1976d2; }
+        40%  { box-shadow: 0 0 0 5px #42a5f5, 0 0 28px 10px rgba(66,165,245,0.55); border-color: #42a5f5; }
+        100% { box-shadow: 0 0 0 3px #1976d2, 0 0 18px 6px rgba(25,118,210,0.45); border-color: #1976d2; }
+      }
+
+      .simulation-frame.goal-flash {
+        animation: goalFlashAnim 0.55s ease-in-out;
+        border-color: #1976d2 !important;
+        box-shadow: 0 0 0 3px #1976d2, 0 0 18px 6px rgba(25,118,210,0.45) !important;
+      }
+
+      .simulation-frame.goal-flash .goal-index-badge {
+        background: #1565c0;
+      }
     </style>
   </head>
 

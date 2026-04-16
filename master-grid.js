@@ -273,6 +273,20 @@
     return null;
   }
 
+  // Highlight the goal frame in the simulator column.
+  function highlightGoalFrame(goalIndex) {
+    const frames = document.querySelectorAll('#simulator-column .simulation-frame');
+    const frame  = frames[goalIndex];
+    if (!frame) return;
+    // Scroll the frame into view inside the simulator column
+    frame.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Strip any previous flash, force reflow, re-add
+    frame.classList.remove('goal-flash');
+    void frame.offsetWidth; // reflow
+    frame.classList.add('goal-flash');
+    setTimeout(() => frame.classList.remove('goal-flash'), 1200);
+  }
+
   // Perform one step: find a matching goal and update robots.
   function nextStep() {
     const btn  = document.getElementById('next-step-btn');
@@ -282,6 +296,7 @@
     if (result) {
       robots = result.robots;
       render();
+      highlightGoalFrame(result.goalIndex);
       if (info) {
         info.textContent =
           `✓ Goal ${result.goalIndex + 1} | rot ${result.rotation}° | ${fmtRobots(result.robots)}`;

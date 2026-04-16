@@ -952,6 +952,11 @@ function createFrameElement(configData, index) {
     totalSteps = configData.steps;
   }
 
+  // Goal-N badge (top-left label for master-grid highlighting)
+  const goalBadge = document.createElement('span');
+  goalBadge.className = 'goal-index-badge';
+  goalBadge.textContent = `Goal ${index + 1}`;
+
   // Add title text (normal color)
   title.textContent = `Simulation ${index + 1
     } (Total Steps: ${totalSteps})`;
@@ -978,7 +983,7 @@ function createFrameElement(configData, index) {
     closeBtn.style.cursor = 'not-allowed';
     closeBtn.title = 'Edit mode required';
   }
-  headerDiv.append(dragHandle, title, rotateBtn, closeBtn);
+  headerDiv.append(goalBadge, dragHandle, title, rotateBtn, closeBtn);
   frameDiv.appendChild(headerDiv);
 
   // --- Grids Wrapper ---
