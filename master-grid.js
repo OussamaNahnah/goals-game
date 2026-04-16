@@ -19,6 +19,10 @@
   let skipAnim  = false; // set true mid-animation to snap to end
   let ctx_anim  = null;  // canvas context reused by animation helpers
   let pendingGoalBox = null; // { corners, goalIndex } of the NEXT matching goal, drawn persistently after each step
+  let history = [];           // ring-buffer of up to 100 previous robot snapshots
+  const HISTORY_MAX = 100;
+  let playing = false;    // true when auto-play is active
+  let playTimer = null;   // setInterval handle
 
   // --- Coordinate helpers ---
   function worldToCanvas(x, y) {
@@ -91,7 +95,8 @@
     drawGrid(ctx);
     drawBoundary(ctx);
     drawRobots(ctx);
-    if (pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
+    const showBox = document.getElementById('show-goal-box')?.checked !== false;
+    if (showBox && pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
   }
 
   // --- Animation helpers ---
@@ -178,7 +183,8 @@
       drawBoundary(ctx_anim);
 
       // Show the current step's real goal boundary throughout the animation
-      if (currentGoalBox) drawGoalBoundaryBox(ctx_anim, currentGoalBox, 1);
+      const showBox = document.getElementById('show-goal-box')?.checked !== false;
+      if (showBox && currentGoalBox) drawGoalBoundaryBox(ctx_anim, currentGoalBox, 1);
 
       // Main robots: fade 1→0.5, switch, fade 0.5→1
       if (t < 0.40) {
@@ -234,6 +240,8 @@
       });
     }
     pendingGoalBox = null;
+    history = [];
+    if (playing) stopPlay();
     render();
   }
 
@@ -428,10 +436,13 @@
 
     if (result) {
       const from = robots.map(r => [...r]);  // snapshot before advancing
+      if (history.length >= HISTORY_MAX) history.shift(); // drop oldest when full
+      history.push(from);                    // save for prevStep
       robots = result.robots;                // advance logical state immediately
       // Peek what comes next so we can show the next goal's region after animation
       const peek = tryNextStep();
-      pendingGoalBox = peek ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
+      const showBox = document.getElementById('show-goal-box')?.checked !== false;
+      pendingGoalBox = (showBox && peek) ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
       animateStep(from, result.robots, result.goalIndex, result.goalBox);
       highlightGoalFrame(result.goalIndex);
       if (info) {
@@ -446,6 +457,8 @@
         setTimeout(() => { btn.style.background = orig; btn.style.color = '#1565c0'; }, 400);
       }
     } else {
+      // No match — stop auto-play
+      if (playing) stopPlay();
       if (info) {
         info.textContent = '✗ No matching goal found';
         info.style.color = '#b71c1c';
@@ -459,6 +472,60 @@
         }, 500);
       }
     }
+  }
+
+  // Step back to the previous robot snapshot.
+  function prevStep() {
+    if (animating) { skipAnim = true; requestAnimationFrame(() => prevStep()); return; }
+    if (history.length === 0) return;
+    const prev = history.pop();
+    const from = robots.map(r => [...r]);
+    robots = prev;
+    pendingGoalBox = null;
+    // Animate backwards (swap from/to) — reuse same function
+    animateStep(from, robots, -1, null);
+    const info = document.getElementById('next-step-info');
+    if (info) { info.textContent = '↩ Step back'; info.style.color = '#555'; }
+  }
+
+  // Auto-play: call nextStep on an interval.
+  const PLAY_INTERVAL = 900; // ms between steps
+  function startPlay() {
+    if (playing) return;
+    playing = true;
+    updatePlayBtn();
+    // Fire immediately then repeat
+    nextStep();
+    playTimer = setInterval(() => {
+      if (!playing) return;
+      nextStep();
+    }, PLAY_INTERVAL);
+  }
+  function stopPlay() {
+    playing = false;
+    clearInterval(playTimer);
+    playTimer = null;
+    updatePlayBtn();
+  }
+  function togglePlay() { playing ? stopPlay() : startPlay(); }
+
+  // Reset to the initial state of the selected goal.
+  function resetStep() {
+    if (playing) stopPlay();
+    if (animating) { skipAnim = true; }
+    const sel = document.getElementById('goal-select');
+    const idx = sel ? parseInt(sel.value) : NaN;
+    if (!isNaN(idx)) {
+      loadGoal(idx); // loadGoal already clears history, pendingGoalBox, stops play
+    }
+    const info = document.getElementById('next-step-info');
+    if (info) { info.textContent = '↺ Reset'; info.style.color = '#555'; }
+  }
+  function updatePlayBtn() {
+    const btn = document.getElementById('play-pause-btn');
+    if (!btn) return;
+    btn.textContent = playing ? '⏸' : '▶';
+    btn.title = playing ? 'Pause (Space)' : 'Play (Space)';
   }
 
   // --- Boundary apply ---
@@ -510,8 +577,34 @@
     const sel = document.getElementById("goal-select");
     if (sel) sel.addEventListener("change", applyBoundaries);
 
-    const nextBtn = document.getElementById("next-step-btn");
-    if (nextBtn) nextBtn.addEventListener("click", nextStep);
+    const nextBtn = document.getElementById('next-step-btn');
+    if (nextBtn) nextBtn.addEventListener('click', nextStep);
+
+    const prevBtn = document.getElementById('prev-step-btn');
+    if (prevBtn) prevBtn.addEventListener('click', prevStep);
+
+    const resetBtn = document.getElementById('reset-step-btn');
+    if (resetBtn) resetBtn.addEventListener('click', resetStep);
+
+    const playBtn = document.getElementById('play-pause-btn');
+    if (playBtn) playBtn.addEventListener('click', togglePlay);
+
+    const showBoxChk = document.getElementById('show-goal-box');
+    if (showBoxChk) showBoxChk.addEventListener('change', () => {
+      if (!showBoxChk.checked) pendingGoalBox = null;
+      render();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      // Only act when the movement panel is visible
+      const panel = document.getElementById('movement-grid-canvas');
+      if (!panel || !panel.offsetParent) return;
+      // Don't steal keys from inputs
+      if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+      if (e.code === 'Space')      { e.preventDefault(); togglePlay(); }
+      else if (e.code === 'ArrowRight') { e.preventDefault(); stopPlay(); nextStep(); }
+      else if (e.code === 'ArrowLeft')  { e.preventDefault(); stopPlay(); prevStep(); }
+    });
   }
 
   // --- Auto-init on page load ---

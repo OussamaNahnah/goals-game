@@ -921,6 +921,11 @@
                   <span style="color: #ccc;">|</span>
                   <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Visibility:</label>
                   <input type="number" id="visibility-input" value="1" min="1" max="5" style="width: 45px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;" title="Robot visibility radius (1–5)">
+                  <span style="color: #ccc;">|</span>
+                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.85em; font-weight:600; color:#444; white-space:nowrap; cursor:pointer; user-select:none;">
+                    <input type="checkbox" id="show-goal-box" checked style="width:14px;height:14px;accent-color:#1565c0;cursor:pointer;">
+                    Goal box
+                  </label>
                 </div>
               </div>
 
@@ -931,27 +936,83 @@
                 </div>
               </div>
 
-              <!-- Next Step Button -->
+              <!-- Playback Controls -->
               <div style="text-align: center; margin-top: 10px; flex-shrink: 0;">
-                <button
-                  id="next-step-btn"
-                  style="
-                    padding: 8px 28px;
-                    font-size: 0.95em;
-                    font-weight: 600;
-                    background: linear-gradient(145deg, #e3f2fd, #bbdefb);
-                    color: #1565c0;
-                    border: 2px solid #90caf9;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    transition: all 0.25s ease;
-                    box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
-                  "
-                  onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
-                  onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
-                >
-                  Next &#9654;
-                </button>
+                <div style="display: inline-flex; gap: 8px; align-items: center;">
+                  <button
+                    id="reset-step-btn"
+                    title="Reset to initial state"
+                    style="
+                      padding: 8px 14px;
+                      font-size: 0.95em;
+                      font-weight: 600;
+                      background: linear-gradient(145deg, #fce4ec, #f8bbd0);
+                      color: #880e4f;
+                      border: 2px solid #f48fb1;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      transition: all 0.25s ease;
+                      box-shadow: 0 2px 6px rgba(136, 14, 79, 0.12);
+                    "
+                    onmouseover="this.style.background='linear-gradient(145deg,#f48fb1,#f06292)';this.style.color='#fff';"
+                    onmouseout="this.style.background='linear-gradient(145deg,#fce4ec,#f8bbd0)';this.style.color='#880e4f';"
+                  >&#8634;</button>
+                  <button
+                    id="prev-step-btn"
+                    title="Previous (←)"
+                    style="
+                      padding: 8px 18px;
+                      font-size: 0.95em;
+                      font-weight: 600;
+                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
+                      color: #1565c0;
+                      border: 2px solid #90caf9;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      transition: all 0.25s ease;
+                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
+                    "
+                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
+                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                  >&#9664; Prev</button>
+                  <button
+                    id="play-pause-btn"
+                    title="Play (Space)"
+                    style="
+                      padding: 8px 20px;
+                      font-size: 1.1em;
+                      font-weight: 700;
+                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
+                      color: #1565c0;
+                      border: 2px solid #90caf9;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      transition: all 0.25s ease;
+                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
+                      min-width: 48px;
+                    "
+                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
+                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                  >&#9654;</button>
+                  <button
+                    id="next-step-btn"
+                    title="Next (→)"
+                    style="
+                      padding: 8px 18px;
+                      font-size: 0.95em;
+                      font-weight: 600;
+                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
+                      color: #1565c0;
+                      border: 2px solid #90caf9;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      transition: all 0.25s ease;
+                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
+                    "
+                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
+                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                  >Next &#9654;</button>
+                </div>
                 <div
                   id="next-step-info"
                   style="
