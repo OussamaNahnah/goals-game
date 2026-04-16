@@ -23,6 +23,8 @@
   const HISTORY_MAX = 100;
   let playing = false;    // true when auto-play is active
   let playTimer = null;   // setInterval handle
+  let trailMode = false;  // when true draw movement lines instead of (or over) dots
+  let trajectories = [];  // [{goalIndex, segments:[{fx,fy,tx,ty}]}] — one entry per applied step
 
   // --- Coordinate helpers ---
   function worldToCanvas(x, y) {
@@ -94,6 +96,7 @@
     const ctx = canvas.getContext("2d");
     drawGrid(ctx);
     drawBoundary(ctx);
+    if (trailMode && trajectories.length > 0) drawTrajectories(ctx, 0.75);
     drawRobots(ctx);
     const showBox = document.getElementById('show-goal-box')?.checked !== false;
     if (showBox && pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
@@ -166,6 +169,48 @@
     ctx.restore();
   }
 
+  // --- Trail / trajectory drawing ---
+  const TRAIL_COLORS = [
+    '#1565c0','#2e7d32','#e65100','#6a1b9a',
+    '#00838f','#c62828','#4527a0','#558b2f',
+    '#f57f17','#37474f',
+  ];
+
+  // Draw accumulated movement lines.
+  // newestAlpha: alpha for the last (most recent) trajectory entry.
+  function drawTrajectories(ctx, newestAlpha) {
+    trajectories.forEach((traj, ti) => {
+      const isNewest = ti === trajectories.length - 1;
+      const alpha    = isNewest ? newestAlpha : 0.55;
+      if (alpha <= 0) return;
+      const color = TRAIL_COLORS[traj.goalIndex % TRAIL_COLORS.length];
+      traj.segments.forEach(({ fx, fy, tx, ty }) => {
+        if (fx === tx && fy === ty) return; // stationary robot — skip
+        const p1 = worldToCanvas(fx, fy);
+        const p2 = worldToCanvas(tx, ty);
+        // Line
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.65;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(p1.cx, p1.cy); ctx.lineTo(p2.cx, p2.cy); ctx.stroke();
+        // Arrowhead at destination
+        ctx.globalAlpha = alpha;
+        const ang  = Math.atan2(p2.cy - p1.cy, p2.cx - p1.cx);
+        const aLen = 9, aWid = 0.38;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(p2.cx, p2.cy);
+        ctx.lineTo(p2.cx - aLen * Math.cos(ang - aWid), p2.cy - aLen * Math.sin(ang - aWid));
+        ctx.lineTo(p2.cx - aLen * Math.cos(ang + aWid), p2.cy - aLen * Math.sin(ang + aWid));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+    });
+  }
+
   // Transition animation: robots fade at midpoint; current goal box shown throughout.
   // After animation ends, render() draws pendingGoalBox (the next goal).
   const ANIM_DURATION = 520;
@@ -181,6 +226,9 @@
       const t = skipAnim ? 1 : Math.min((now - start) / ANIM_DURATION, 1);
       drawGrid(ctx_anim);
       drawBoundary(ctx_anim);
+
+      // Trail: all previous at fixed alpha, newest fades in with t
+      if (trailMode && trajectories.length > 0) drawTrajectories(ctx_anim, t);
 
       // Show the current step's real goal boundary throughout the animation
       const showBox = document.getElementById('show-goal-box')?.checked !== false;
@@ -241,6 +289,7 @@
     }
     pendingGoalBox = null;
     history = [];
+    trajectories = [];
     if (playing) stopPlay();
     render();
   }
@@ -438,6 +487,9 @@
       const from = robots.map(r => [...r]);  // snapshot before advancing
       if (history.length >= HISTORY_MAX) history.shift(); // drop oldest when full
       history.push(from);                    // save for prevStep
+      // Record trajectory segment for trail mode
+      const segments = from.map((r, i) => ({ fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
+      trajectories.push({ goalIndex: result.goalIndex, segments });
       robots = result.robots;                // advance logical state immediately
       // Peek what comes next so we can show the next goal's region after animation
       const peek = tryNextStep();
@@ -481,6 +533,7 @@
     const prev = history.pop();
     const from = robots.map(r => [...r]);
     robots = prev;
+    trajectories.pop(); // undo last trail segment
     pendingGoalBox = null;
     // Animate backwards (swap from/to) — reuse same function
     animateStep(from, robots, -1, null);
@@ -489,7 +542,9 @@
   }
 
   // Auto-play: call nextStep on an interval.
-  const PLAY_INTERVAL = 720; // 1.25× speed
+  function getPlayInterval() {
+    return parseInt(document.getElementById('play-speed-select')?.value) || 720;
+  }
   function startPlay() {
     if (playing) return;
     playing = true;
@@ -498,7 +553,7 @@
     playTimer = setInterval(() => {
       if (!playing) return;
       nextStep();
-    }, PLAY_INTERVAL);
+    }, getPlayInterval());
   }
   function stopPlay() {
     playing = false;
@@ -665,6 +720,13 @@
     const showBoxChk = document.getElementById('show-goal-box');
     if (showBoxChk) showBoxChk.addEventListener('change', () => {
       if (!showBoxChk.checked) pendingGoalBox = null;
+      render();
+    });
+
+    const trailChk = document.getElementById('trail-mode-chk');
+    if (trailChk) trailChk.addEventListener('change', () => {
+      trailMode = trailChk.checked;
+      if (!trailMode) trajectories = [];
       render();
     });
 
