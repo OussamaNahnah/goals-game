@@ -894,59 +894,105 @@
                   flex-shrink: 0;
                 "
               >
-                <span style="font-weight: 600; color: #333; font-size: 1em;">Master Grid</span>
+                <span style="font-weight: 700; color: #1e293b; font-size: 0.95em; letter-spacing: 0.03em; text-transform: uppercase;">Master Grid</span>
               </div>
 
-              <!-- Goal Selector + Master Boundaries (single row) -->
-              <div id="grid-controls" style="margin-bottom: 15px; padding: 10px 12px; background: #f0f7ff; border-radius: 6px; border: 1px solid #cce5ff;">
-                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-                  <label style="font-size: 0.85em; font-weight: 500; color: #555; white-space: nowrap;">Starting Goal:</label>
-                  <select id="goal-select" style="padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white;">
-                    <option value="">-- Select a Goal --</option>
+              <!-- Master Grid Controls -->
+              <style>
+                #grid-controls { margin-bottom: 14px; }
+                .mgc-row {
+                  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+                  padding: 7px 10px; border-radius: 7px;
+                  background: #f4f7fb; border: 1px solid #dde4ee;
+                  margin-bottom: 6px;
+                }
+                .mgc-label {
+                  font-size: 0.78em; font-weight: 600; color: #6b7280;
+                  text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
+                }
+                .mgc-sep {
+                  width: 1px; height: 18px; background: #d1d9e6;
+                  flex-shrink: 0; margin: 0 2px;
+                }
+                .mgc-select {
+                  padding: 4px 7px; border: 1px solid #c9d4e2; border-radius: 5px;
+                  font-size: 0.85em; background: #fff; color: #1e293b;
+                  transition: border-color 0.15s;
+                  cursor: pointer;
+                }
+                .mgc-select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+                .mgc-input {
+                  border: 1px solid #c9d4e2; border-radius: 5px;
+                  font-size: 0.85em; background: #fff; color: #1e293b;
+                  padding: 4px 5px; text-align: center;
+                  transition: border-color 0.15s;
+                }
+                .mgc-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+                .mgc-range-group {
+                  display: inline-flex; align-items: center; gap: 4px;
+                }
+                .mgc-range-lbl {
+                  font-size: 0.8em; font-weight: 700; color: #475569; min-width: 12px; text-align: center;
+                }
+                .mgc-arrow { font-size: 0.75em; color: #94a3b8; }
+                .mgc-chk-label {
+                  display: inline-flex; align-items: center; gap: 5px;
+                  font-size: 0.82em; font-weight: 600; color: #374151;
+                  white-space: nowrap; cursor: pointer; user-select: none;
+                  padding: 3px 8px 3px 6px; border-radius: 5px; border: 1px solid transparent;
+                  transition: background 0.15s, border-color 0.15s;
+                }
+                .mgc-chk-label:hover { background: #e8eef6; border-color: #c9d4e2; }
+                .mgc-chk-label input[type=checkbox] { width: 13px; height: 13px; cursor: pointer; margin: 0; }
+              </style>
+              <div id="grid-controls">
+                <!-- Row 1: Goal + Grid Size + Boundaries -->
+                <div class="mgc-row">
+                  <span class="mgc-label">Goal</span>
+                  <select id="goal-select" class="mgc-select" style="min-width:110px;">
+                    <option value="">-- Select --</option>
                   </select>
-                  <span style="color: #ccc;">|</span>
-                  <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Grid Size:</label>
-                  <select id="grid-size-select" style="padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em; background: white; font-family: monospace;"></select>
-                  <span style="color: #ccc;">|</span>
-                  <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Master Boundaries:</label>
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <label style="font-size: 0.85em; font-weight: 500; color: #555;">X:</label>
-                    <input type="number" id="boundary-xmin" value="-6" min="-20" max="0" style="width: 55px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;">
-                    <span style="color: #888; font-size: 0.9em;">to</span>
-                    <input type="number" id="boundary-xmax" value="6" min="0" max="20" style="width: 55px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;">
+                  <div class="mgc-sep"></div>
+                  <span class="mgc-label">Grid</span>
+                  <select id="grid-size-select" class="mgc-select" style="font-family:monospace; min-width: 140px;"></select>
+                  <div class="mgc-sep"></div>
+                  <span class="mgc-label">Bounds</span>
+                  <div class="mgc-range-group">
+                    <span class="mgc-range-lbl">X</span>
+                    <input type="number" id="boundary-xmin" value="-6" min="-20" max="0" class="mgc-input" style="width:48px;">
+                    <span class="mgc-arrow">→</span>
+                    <input type="number" id="boundary-xmax" value="6" min="0" max="20" class="mgc-input" style="width:48px;">
                   </div>
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <label style="font-size: 0.85em; font-weight: 500; color: #555;">Y:</label>
-                    <input type="number" id="boundary-ymin" value="-6" min="-20" max="0" style="width: 55px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;">
-                    <span style="color: #888; font-size: 0.9em;">to</span>
-                    <input type="number" id="boundary-ymax" value="6" min="0" max="20" style="width: 55px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;">
+                  <div class="mgc-range-group">
+                    <span class="mgc-range-lbl">Y</span>
+                    <input type="number" id="boundary-ymin" value="-6" min="-20" max="0" class="mgc-input" style="width:48px;">
+                    <span class="mgc-arrow">→</span>
+                    <input type="number" id="boundary-ymax" value="6" min="0" max="20" class="mgc-input" style="width:48px;">
                   </div>
-                  <span style="color: #ccc;">|</span>
-                  <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Visibility:</label>
-                  <input type="number" id="visibility-input" value="1" min="1" max="5" style="width: 45px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;" title="Robot visibility radius (1–5)">
-                  <span style="color: #ccc;">|</span>
-                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.85em; font-weight:600; color:#444; white-space:nowrap; cursor:pointer; user-select:none;">
-                    <input type="checkbox" id="show-goal-box" checked style="width:14px;height:14px;accent-color:#1565c0;cursor:pointer;">
+                  <div class="mgc-sep"></div>
+                  <span class="mgc-label">Vis</span>
+                  <input type="number" id="visibility-input" value="1" min="1" max="5" class="mgc-input" style="width:42px;" title="Robot visibility radius (1–5)">
+                  <div class="mgc-sep"></div>
+                  <label class="mgc-chk-label">
+                    <input type="checkbox" id="show-goal-box" checked style="accent-color:#1565c0;">
                     Goal box
                   </label>
-                  <span style="color: #ccc;">|</span>
-                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.85em; font-weight:600; color:#444; white-space:nowrap; cursor:pointer; user-select:none;">
-                    <input type="checkbox" id="trail-mode-chk" style="width:14px;height:14px;accent-color:#e65100;cursor:pointer;">
+                  <label class="mgc-chk-label">
+                    <input type="checkbox" id="trail-mode-chk" style="accent-color:#e65100;">
                     Trail
                   </label>
-                  <span style="color: #ccc;">|</span>
-                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.85em; font-weight:600; color:#444; white-space:nowrap; cursor:pointer; user-select:none;">
-                    <input type="checkbox" id="automaton-chk" style="width:14px;height:14px;accent-color:#6a1b9a;cursor:pointer;">
+                  <label class="mgc-chk-label">
+                    <input type="checkbox" id="automaton-chk" style="accent-color:#6a1b9a;">
                     Automaton
                   </label>
-                  <span style="color: #ccc;">|</span>
-                  <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Speed:</label>
-                  <select id="play-speed-select" style="padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white; cursor: pointer;">
-                    <option value="1500">0.5&times;</option>
-                    <option value="900">1&times;</option>
-                    <option value="720" selected>1.25&times;</option>
-                    <option value="500">2&times;</option>
-                    <option value="250">4&times;</option>
+                  <div class="mgc-sep"></div>
+                  <span class="mgc-label">Speed</span>
+                  <select id="play-speed-select" class="mgc-select">
+                    <option value="1500">0.5×</option>
+                    <option value="900">1×</option>
+                    <option value="720" selected>1.25×</option>
+                    <option value="500">2×</option>
+                    <option value="250">4×</option>
                     <option value="100">Fast</option>
                   </select>
                 </div>
@@ -964,91 +1010,40 @@
 
               <!-- Playback Controls -->
               <div style="text-align: center; margin-top: 10px; flex-shrink: 0;">
-                <div style="display: inline-flex; gap: 8px; align-items: center;">
+                <div style="display: inline-flex; gap: 6px; align-items: center; background:#f4f7fb; border:1px solid #dde4ee; border-radius:8px; padding:6px 10px;">
                   <button
                     id="reset-step-btn"
                     title="Reset to initial state"
-                    style="
-                      padding: 8px 14px;
-                      font-size: 0.95em;
-                      font-weight: 600;
-                      background: linear-gradient(145deg, #fce4ec, #f8bbd0);
-                      color: #880e4f;
-                      border: 2px solid #f48fb1;
-                      border-radius: 6px;
-                      cursor: pointer;
-                      transition: all 0.25s ease;
-                      box-shadow: 0 2px 6px rgba(136, 14, 79, 0.12);
-                    "
-                    onmouseover="this.style.background='linear-gradient(145deg,#f48fb1,#f06292)';this.style.color='#fff';"
-                    onmouseout="this.style.background='linear-gradient(145deg,#fce4ec,#f8bbd0)';this.style.color='#880e4f';"
+                    style="padding:6px 12px;font-size:1em;font-weight:700;background:#fff;color:#be185d;border:1px solid #f9a8d4;border-radius:6px;cursor:pointer;transition:all .15s;line-height:1;"
+                    onmouseover="this.style.background='#fce7f3';this.style.borderColor='#ec4899';"
+                    onmouseout="this.style.background='#fff';this.style.borderColor='#f9a8d4';"
                   >&#8634;</button>
+                  <div style="width:1px;height:20px;background:#dde4ee;"></div>
                   <button
                     id="prev-step-btn"
                     title="Previous (←)"
-                    style="
-                      padding: 8px 18px;
-                      font-size: 0.95em;
-                      font-weight: 600;
-                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
-                      color: #1565c0;
-                      border: 2px solid #90caf9;
-                      border-radius: 6px;
-                      cursor: pointer;
-                      transition: all 0.25s ease;
-                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
-                    "
-                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
-                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                    style="padding:6px 14px;font-size:0.88em;font-weight:600;background:#fff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer;transition:all .15s;"
+                    onmouseover="this.style.background='#eff6ff';this.style.borderColor='#93c5fd';"
+                    onmouseout="this.style.background='#fff';this.style.borderColor='#bfdbfe';"
                   >&#9664; Prev</button>
                   <button
                     id="play-pause-btn"
                     title="Play (Space)"
-                    style="
-                      padding: 8px 20px;
-                      font-size: 1.1em;
-                      font-weight: 700;
-                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
-                      color: #1565c0;
-                      border: 2px solid #90caf9;
-                      border-radius: 6px;
-                      cursor: pointer;
-                      transition: all 0.25s ease;
-                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
-                      min-width: 48px;
-                    "
-                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
-                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                    style="padding:6px 18px;font-size:1.05em;font-weight:700;background:#1d4ed8;color:#fff;border:1px solid transparent;border-radius:6px;cursor:pointer;transition:all .15s;min-width:44px;"
+                    onmouseover="this.style.background='#1e40af';"
+                    onmouseout="this.style.background='#1d4ed8';"
                   >&#9654;</button>
                   <button
                     id="next-step-btn"
                     title="Next (→)"
-                    style="
-                      padding: 8px 18px;
-                      font-size: 0.95em;
-                      font-weight: 600;
-                      background: linear-gradient(145deg, #e3f2fd, #bbdefb);
-                      color: #1565c0;
-                      border: 2px solid #90caf9;
-                      border-radius: 6px;
-                      cursor: pointer;
-                      transition: all 0.25s ease;
-                      box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
-                    "
-                    onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
-                    onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                    style="padding:6px 14px;font-size:0.88em;font-weight:600;background:#fff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer;transition:all .15s;"
+                    onmouseover="this.style.background='#eff6ff';this.style.borderColor='#93c5fd';"
+                    onmouseout="this.style.background='#fff';this.style.borderColor='#bfdbfe';"
                   >Next &#9654;</button>
                 </div>
                 <div
                   id="next-step-info"
-                  style="
-                    font-size: 0.78em;
-                    margin-top: 6px;
-                    min-height: 1.3em;
-                    color: #555;
-                    font-family: monospace;
-                    letter-spacing: 0.02em;
-                  "
+                  style="font-size:0.75em;margin-top:5px;min-height:1.3em;color:#64748b;font-family:monospace;letter-spacing:0.02em;"
                 ></div>
               </div>
             </div>
