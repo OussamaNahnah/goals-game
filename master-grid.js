@@ -926,7 +926,13 @@
     });
 
     const visInput = document.getElementById('visibility-input');
-    if (visInput) visInput.addEventListener('change', () => populateGridSizeSelect());
+    if (visInput) {
+      // Seed default from defaultVisibility constant if input still has the placeholder value
+      if (typeof defaultVisibility !== 'undefined') {
+        visInput.value = defaultVisibility;
+      }
+      visInput.addEventListener('change', () => populateGridSizeSelect());
+    }
 
     document.addEventListener('keydown', (e) => {
       // Only act when the movement panel is visible
