@@ -25,6 +25,9 @@
   let playTimer = null;   // setInterval handle
   let trailMode = false;  // when true draw movement lines instead of (or over) dots
   let trajectories = [];  // [{goalIndex, segments:[{fx,fy,tx,ty}]}] — one entry per applied step
+  let showAutomaton = false;   // show goal-transition automaton diagram
+  let automatonCache = null;   // [{from,to}] — invalidated when goals change
+  let activeGoalIdx  = -1;     // currently highlighted node in automaton
 
   // --- Coordinate helpers ---
   function worldToCanvas(x, y) {
@@ -100,6 +103,7 @@
     drawRobots(ctx);
     const showBox = document.getElementById('show-goal-box')?.checked !== false;
     if (showBox && pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
+    if (showAutomaton) drawAutomaton();
   }
 
   // --- Animation helpers ---
@@ -275,21 +279,37 @@
 
     const firstGrid = config.grids[0] || [];
 
-    if (wallX === null && wallY === null) {
-      robots = firstGrid.map(([c, x, y]) => [c, x, y]);
+    if (firstGrid.length > 0) {
+      const xs = firstGrid.map(([, x]) => x);
+      const ys = firstGrid.map(([,, y]) => y);
+      const groupCx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const groupCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+
+      // Each axis handled independently:
+      //   wall present → anchor to boundary edge via wall formula
+      //   no wall      → center the group at the boundary midpoint (keeps robots far from both edges)
+      const boundaryCenterX = (boundary.xmin + boundary.xmax) / 2;
+      const boundaryCenterY = (boundary.ymin + boundary.ymax) / 2;
+      const offsetX = wallX === null
+        ? boundaryCenterX - groupCx
+        : (wallX <= 0 ? boundary.xmin - wallX : boundary.xmax - wallX);
+      const offsetY = wallY === null
+        ? boundaryCenterY - groupCy
+        : (wallY <= 0 ? boundary.ymin - wallY : boundary.ymax - wallY);
+
+      robots = firstGrid.map(([c, relX, relY]) => [
+        c,
+        Math.round(relX + offsetX),
+        Math.round(relY + offsetY),
+      ]);
     } else {
-      robots = firstGrid.map(([c, relX, relY]) => {
-        let absX = relX, absY = relY;
-        if (wallX !== null)
-          absX = relX + (wallX <= 0 ? boundary.xmin - wallX : boundary.xmax - wallX);
-        if (wallY !== null)
-          absY = relY + (wallY <= 0 ? boundary.ymin - wallY : boundary.ymax - wallY);
-        return [c, Math.round(absX), Math.round(absY)];
-      });
+      robots = [];
     }
     pendingGoalBox = null;
     history = [];
     trajectories = [];
+    automatonCache = null;
+    activeGoalIdx = -1;
     if (playing) stopPlay();
     render();
   }
@@ -490,8 +510,9 @@
       // Record trajectory segment for trail mode
       const segments = from.map((r, i) => ({ fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
       trajectories.push({ goalIndex: result.goalIndex, segments });
+      automatonCache = null;                 // rebuild automaton trace on next draw
       robots = result.robots;                // advance logical state immediately
-      // Peek what comes next so we can show the next goal's region after animation
+      activeGoalIdx = result.goalIndex;      // highlight in automaton
       const peek = tryNextStep();
       const showBox = document.getElementById('show-goal-box')?.checked !== false;
       pendingGoalBox = (showBox && peek) ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
@@ -534,6 +555,8 @@
     const from = robots.map(r => [...r]);
     robots = prev;
     trajectories.pop(); // undo last trail segment
+    automatonCache = null; // rebuild automaton trace on next draw
+    activeGoalIdx = -1;
     pendingGoalBox = null;
     // Animate backwards (swap from/to) — reuse same function
     animateStep(from, robots, -1, null);
@@ -686,6 +709,160 @@
         loadGoal(0);
       }
     }
+    automatonCache = null; // goals changed — rebuild on next draw
+  }
+
+  // --- Automaton diagram ---
+
+  // Build the automaton from the *actual execution trace* (trajectories).
+  // Each unique consecutive pair gi→gj found in the trace becomes an edge.
+  // The diagram therefore grows step by step as the simulation runs.
+  function buildAutomaton() {
+    if (trajectories.length === 0) return [];
+    const path = trajectories.map(t => t.goalIndex);
+    const seen = new Set();
+    const out  = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const key = `${path[i]}-${path[i + 1]}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push({ from: path[i], to: path[i + 1] });
+      }
+    }
+    // Self-loops are handled by the key above (same gi→gi)
+    return out;
+  }
+
+  function _arrowHead(ctx, x, y, angle, size, color) {
+    const spread = 0.38;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - size * Math.cos(angle - spread), y - size * Math.sin(angle - spread));
+    ctx.lineTo(x - size * Math.cos(angle + spread), y - size * Math.sin(angle + spread));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function _curvedArrow(ctx, x1, y1, x2, y2, nodeR, bend, color, lw) {
+    const dx = x2-x1, dy = y2-y1;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if (dist < 1) return;
+    const ux = dx/dist, uy = dy/dist;
+    const px = -uy, py = ux;                    // perpendicular (left)
+    const sx = x1 + ux*nodeR, sy = y1 + uy*nodeR; // start on circle edge
+    const ex = x2 - ux*nodeR, ey = y2 - uy*nodeR; // end on circle edge
+    const mx = (sx+ex)/2 + px*bend, my = (sy+ey)/2 + py*bend; // control point
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, ex, ey); ctx.stroke();
+    // arrowhead angle = tangent at endpoint of quadratic curve at t=1: 2*(p2-p1)
+    const tgx = ex - mx, tgy = ey - my;
+    _arrowHead(ctx, ex, ey, Math.atan2(tgy, tgx), 8, color);
+    ctx.restore();
+  }
+
+  function drawAutomaton() {
+    const canvas = document.getElementById('automaton-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const goals = window.activeSimulationConfigs;
+    if (!goals || goals.length === 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#999'; ctx.font = '11px Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('No goals loaded', canvas.width/2, canvas.height/2);
+      return;
+    }
+
+    if (!automatonCache) automatonCache = buildAutomaton();
+    const transitions = automatonCache;
+    const N = goals.length;
+
+    // Auto-resize canvas to a square that comfortably fits all nodes in a circle
+    const size = N <= 2 ? 160 : N <= 4 ? 220 : N <= 8 ? 280 : 320;
+    if (canvas.width !== size || canvas.height !== size) {
+      canvas.width = size;
+      canvas.height = size;
+    }
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Node radius based on N
+    const R = Math.min(18, Math.max(10, Math.floor(100 / N)));
+    const pad = R + 10;
+    const circleR = Math.min(W, H) / 2 - pad;
+
+    // Place nodes evenly on a circle, starting from the top (-π/2)
+    const nodes = Array.from({length: N}, (_, i) => {
+      if (N === 1) return { x: W/2, y: H/2, angle: -Math.PI/2 };
+      const angle = -Math.PI / 2 + (2 * Math.PI * i) / N;
+      return {
+        x: W/2 + circleR * Math.cos(angle),
+        y: H/2 + circleR * Math.sin(angle),
+        angle
+      };
+    });
+
+    // Identify bidirectional pairs (bend arcs in opposite directions)
+    const bidir = new Set();
+    transitions.forEach(t => {
+      if (t.from !== t.to && transitions.some(u => u.from === t.to && u.to === t.from))
+        bidir.add(`${Math.min(t.from,t.to)}-${Math.max(t.from,t.to)}`);
+    });
+
+    // Draw edges first (under nodes)
+    transitions.forEach(({ from, to }) => {
+      const color = TRAIL_COLORS[from % TRAIL_COLORS.length];
+      const isActive = (from === activeGoalIdx);
+      const lw = isActive ? 2.5 : 1.5;
+      const p1 = nodes[from], p2 = nodes[to];
+
+      if (from === to) {
+        // Self-loop: small arc radiating outward from the ring
+        const outAngle = p1.angle;
+        const lx = p1.x + Math.cos(outAngle) * (R + R * 1.0);
+        const ly = p1.y + Math.sin(outAngle) * (R + R * 1.0);
+        const loopR = R * 0.72;
+        ctx.save();
+        ctx.strokeStyle = color; ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.arc(lx, ly, loopR, 0.3, Math.PI * 2 - 0.3, false);
+        ctx.stroke();
+        _arrowHead(ctx, lx + Math.sin(0.3)*loopR, ly + loopR*Math.cos(0.3)*0.1 + loopR*0.95,
+          Math.PI*0.5 + 0.3, 7, color);
+        ctx.restore();
+      } else {
+        const key = `${Math.min(from,to)}-${Math.max(from,to)}`;
+        const bend = bidir.has(key)
+          ? (from < to ? -R * 1.6 : R * 1.6)
+          : -R * 0.5;
+        _curvedArrow(ctx, p1.x, p1.y, p2.x, p2.y, R, bend, color, lw);
+      }
+    });
+
+    // Which goals have been visited in the trace so far?
+    const visitedGoals = new Set(trajectories.map(t => t.goalIndex));
+
+    // Draw nodes on top
+    for (let i = 0; i < N; i++) {
+      const { x, y } = nodes[i];
+      const isActive  = i === activeGoalIdx;
+      const isVisited = visitedGoals.has(i);
+      const color = TRAIL_COLORS[i % TRAIL_COLORS.length];
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
+      ctx.fillStyle = isActive ? color : (isVisited ? '#e8f5e9' : '#f5f5f5');
+      ctx.fill();
+      ctx.strokeStyle = isVisited ? color : '#ccc';
+      ctx.lineWidth = isActive ? 3 : 2; ctx.stroke();
+      ctx.fillStyle = isActive ? '#fff' : (isVisited ? color : '#bbb');
+      ctx.font = `bold ${Math.max(8, R - 2)}px Inter, Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`G${i+1}`, x, y);
+    }
   }
 
   // --- Init (called every time panel opens) ---
@@ -728,6 +905,14 @@
       trailMode = trailChk.checked;
       if (!trailMode) trajectories = [];
       render();
+    });
+
+    const automChk = document.getElementById('automaton-chk');
+    if (automChk) automChk.addEventListener('change', () => {
+      showAutomaton = automChk.checked;
+      const cont = document.getElementById('automaton-container');
+      if (cont) cont.style.display = showAutomaton ? 'block' : 'none';
+      if (showAutomaton) { automatonCache = null; drawAutomaton(); }
     });
 
     const gridSizeSel = document.getElementById('grid-size-select');

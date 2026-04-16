@@ -935,6 +935,11 @@
                     Trail
                   </label>
                   <span style="color: #ccc;">|</span>
+                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.85em; font-weight:600; color:#444; white-space:nowrap; cursor:pointer; user-select:none;">
+                    <input type="checkbox" id="automaton-chk" style="width:14px;height:14px;accent-color:#6a1b9a;cursor:pointer;">
+                    Automaton
+                  </label>
+                  <span style="color: #ccc;">|</span>
                   <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Speed:</label>
                   <select id="play-speed-select" style="padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: white; cursor: pointer;">
                     <option value="1500">0.5&times;</option>
@@ -951,6 +956,9 @@
               <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: auto; min-height: 320px;">
                 <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff;">
                   <canvas id="movement-grid-canvas" width="300" height="300"></canvas>
+                </div>
+                <div id="automaton-container" style="display:none; margin-top: 8px; border: 1px solid #cce5ff; border-radius: 4px; background: #f8fbff;">
+                  <canvas id="automaton-canvas" width="280" height="280"></canvas>
                 </div>
               </div>
 
