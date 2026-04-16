@@ -1042,9 +1042,14 @@
       // Only act when the movement panel is visible
       const panel = document.getElementById('movement-grid-canvas');
       if (!panel || !panel.offsetParent) return;
-      // Don't steal keys from inputs
-      if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
-      if (e.code === 'Space')      { e.preventDefault(); togglePlay(); }
+      // Block only if focus is on a text-entry field that is NOT inside the movement column
+      const movementCol = document.getElementById('movement-column');
+      const focused = document.activeElement;
+      const isTextEntry = ['INPUT','TEXTAREA'].includes(focused?.tagName) &&
+                          focused?.type !== 'checkbox' && focused?.type !== 'radio';
+      const insidePanel = movementCol && movementCol.contains(focused);
+      if (isTextEntry && !insidePanel) return;
+      if (e.code === 'Space')           { e.preventDefault(); togglePlay(); }
       else if (e.code === 'ArrowRight') { e.preventDefault(); stopPlay(); nextStep(); }
       else if (e.code === 'ArrowLeft')  { e.preventDefault(); stopPlay(); prevStep(); }
     });
