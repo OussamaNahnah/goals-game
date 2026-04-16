@@ -15,6 +15,10 @@
   let robots = [];
   let currentWall = { x: null, y: null }; // absolute wall coords on master grid
   let initialized = false;
+  let animating = false; // true while a step animation is running
+  let skipAnim  = false; // set true mid-animation to snap to end
+  let ctx_anim  = null;  // canvas context reused by animation helpers
+  let pendingGoalBox = null; // { corners, goalIndex } of the NEXT matching goal, drawn persistently after each step
 
   // --- Coordinate helpers ---
   function worldToCanvas(x, y) {
@@ -87,6 +91,113 @@
     drawGrid(ctx);
     drawBoundary(ctx);
     drawRobots(ctx);
+    if (pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
+  }
+
+  // --- Animation helpers ---
+
+  // Draw an explicit robot list at a given alpha using ctx_anim.
+  function drawListFX(list, alpha) {
+    if (alpha <= 0) return;
+    const colorMap = window.letterColorMap || {};
+    list.forEach(([color, x, y]) => {
+      const { cx, cy } = worldToCanvas(x, y);
+      const inBounds = isWithinBoundary(x, y);
+      ctx_anim.globalAlpha = alpha;
+      ctx_anim.fillStyle = colorMap[color] || 'gray';
+      ctx_anim.beginPath(); ctx_anim.arc(cx, cy, 8, 0, Math.PI * 2); ctx_anim.fill();
+      ctx_anim.setLineDash([]);
+      ctx_anim.strokeStyle = inBounds ? '#000' : '#e53935';
+      ctx_anim.lineWidth = 2; ctx_anim.stroke();
+      ctx_anim.fillStyle = '#fff';
+      ctx_anim.font = 'bold 12px Arial';
+      ctx_anim.textAlign = 'center'; ctx_anim.textBaseline = 'middle';
+      ctx_anim.fillText(color, cx, cy);
+      ctx_anim.globalAlpha = 1;
+    });
+  }
+
+  // Draw the real goal boundary box (rotated + translated into master-grid world coords).
+  // goalBox = { corners: [[wx,wy], ...4 corners in order], goalIndex }
+  function drawGoalBoundaryBox(ctx, goalBox, alpha) {
+    if (!goalBox || alpha <= 0) return;
+    const { corners, goalIndex } = goalBox;
+    const pts = corners.map(([wx, wy]) => worldToCanvas(wx, wy));
+
+    ctx.save();
+    // Light fill to shade the working region
+    ctx.globalAlpha = alpha * 0.10;
+    ctx.fillStyle = '#1565c0';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].cx, pts[0].cy);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Dashed stroke
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#1565c0';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].cx, pts[0].cy);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Badge at the top-left canvas corner of the bounding rect
+    const minCx = Math.min(...pts.map(p => p.cx));
+    const minCy = Math.min(...pts.map(p => p.cy));
+    const label = `Goal ${goalIndex + 1}`;
+    ctx.font = 'bold 11px Inter, Arial, sans-serif';
+    const tw = ctx.measureText(label).width;
+    const lpad = 5, lh = 17;
+    ctx.fillStyle = '#1565c0';
+    ctx.fillRect(minCx, minCy - lh, tw + lpad * 2, lh);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, minCx + lpad, minCy - lh / 2);
+    ctx.restore();
+  }
+
+  // Transition animation: robots fade at midpoint; current goal box shown throughout.
+  // After animation ends, render() draws pendingGoalBox (the next goal).
+  const ANIM_DURATION = 520;
+  function animateStep(from, to, goalIndex, currentGoalBox) {
+    const canvas = document.getElementById('movement-grid-canvas');
+    if (!canvas) { render(); return; }
+    ctx_anim  = canvas.getContext('2d');
+    animating = true;
+    skipAnim  = false;
+    const start = performance.now();
+
+    function frame(now) {
+      const t = skipAnim ? 1 : Math.min((now - start) / ANIM_DURATION, 1);
+      drawGrid(ctx_anim);
+      drawBoundary(ctx_anim);
+
+      // Show the current step's real goal boundary throughout the animation
+      if (currentGoalBox) drawGoalBoundaryBox(ctx_anim, currentGoalBox, 1);
+
+      // Main robots: fade 1→0.5, switch, fade 0.5→1
+      if (t < 0.40) {
+        drawListFX(from, 1 - (t / 0.40) * 0.5);
+      } else if (t < 0.60) {
+        drawListFX(to, 0.5);
+      } else {
+        drawListFX(to, 0.5 + ((t - 0.60) / 0.40) * 0.5);
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        animating = false;
+        skipAnim  = false;
+        render(); // render() will draw pendingGoalBox (next goal)
+      }
+    }
+    requestAnimationFrame(frame);
   }
 
   // --- Load goal positions ---
@@ -122,6 +233,7 @@
         return [c, Math.round(absX), Math.round(absY)];
       });
     }
+    pendingGoalBox = null;
     render();
   }
 
@@ -262,7 +374,21 @@
               ` | ${fmtRobots(robots)} → ${fmtRobots(newRobots)}`
             );
             console.groupEnd();
-            return { robots: newRobots, goalIndex: gi, rotation: angle };
+            // Compute real goal boundary corners in master-grid world coords
+            const goalBounds = config.boundaries || { xmin: -2, xmax: 2, ymin: -2, ymax: 2 };
+            const goalBoxCorners = [
+              [goalBounds.xmin, goalBounds.ymin],
+              [goalBounds.xmax, goalBounds.ymin],
+              [goalBounds.xmax, goalBounds.ymax],
+              [goalBounds.xmin, goalBounds.ymax],
+            ].map(([bx, by]) => {
+              const [rx, ry] = rotatePoint(bx - ruleRefX, by - ruleRefY, angle);
+              return [rx + refX, ry + refY];
+            });
+            return {
+              robots: newRobots, goalIndex: gi, rotation: angle,
+              goalBox: { corners: goalBoxCorners, goalIndex: gi },
+            };
           }
         }
       }
@@ -291,11 +417,22 @@
   function nextStep() {
     const btn  = document.getElementById('next-step-btn');
     const info = document.getElementById('next-step-info');
+
+    if (animating) {
+      skipAnim = true;
+      requestAnimationFrame(() => nextStep());
+      return;
+    }
+
     const result = tryNextStep();
 
     if (result) {
-      robots = result.robots;
-      render();
+      const from = robots.map(r => [...r]);  // snapshot before advancing
+      robots = result.robots;                // advance logical state immediately
+      // Peek what comes next so we can show the next goal's region after animation
+      const peek = tryNextStep();
+      pendingGoalBox = peek ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
+      animateStep(from, result.robots, result.goalIndex, result.goalBox);
       highlightGoalFrame(result.goalIndex);
       if (info) {
         info.textContent =
