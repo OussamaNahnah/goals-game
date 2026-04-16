@@ -887,6 +887,9 @@
                     <span style="color: #888; font-size: 0.9em;">to</span>
                     <input type="number" id="boundary-ymax" value="6" min="0" max="20" style="width: 55px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;">
                   </div>
+                  <span style="color: #ccc;">|</span>
+                  <label style="font-size: 0.85em; font-weight: 600; color: #444; white-space: nowrap;">Visibility:</label>
+                  <input type="number" id="visibility-input" value="1" min="1" max="5" style="width: 45px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em;" title="Robot visibility radius (1–5)">
                 </div>
               </div>
 
@@ -895,6 +898,40 @@
                 <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff;">
                   <canvas id="movement-grid-canvas" width="300" height="300"></canvas>
                 </div>
+              </div>
+
+              <!-- Next Step Button -->
+              <div style="text-align: center; margin-top: 10px; flex-shrink: 0;">
+                <button
+                  id="next-step-btn"
+                  style="
+                    padding: 8px 28px;
+                    font-size: 0.95em;
+                    font-weight: 600;
+                    background: linear-gradient(145deg, #e3f2fd, #bbdefb);
+                    color: #1565c0;
+                    border: 2px solid #90caf9;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.25s ease;
+                    box-shadow: 0 2px 6px rgba(25, 118, 210, 0.15);
+                  "
+                  onmouseover="this.style.background='linear-gradient(145deg,#90caf9,#64b5f6)';this.style.color='#fff';"
+                  onmouseout="this.style.background='linear-gradient(145deg,#e3f2fd,#bbdefb)';this.style.color='#1565c0';"
+                >
+                  Next &#9654;
+                </button>
+                <div
+                  id="next-step-info"
+                  style="
+                    font-size: 0.78em;
+                    margin-top: 6px;
+                    min-height: 1.3em;
+                    color: #555;
+                    font-family: monospace;
+                    letter-spacing: 0.02em;
+                  "
+                ></div>
               </div>
             </div>
           </div>

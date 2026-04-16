@@ -13,6 +13,7 @@
   // --- State ---
   let boundary = { xmin: -6, xmax: 6, ymin: -6, ymax: 6 };
   let robots = [];
+  let currentWall = { x: null, y: null }; // absolute wall coords on master grid
   let initialized = false;
 
   // --- Coordinate helpers ---
@@ -103,6 +104,10 @@
       });
     }
 
+    // Store absolute wall positions (wall always lands on the boundary edge)
+    currentWall.x = wallX !== null ? (wallX <= 0 ? boundary.xmin : boundary.xmax) : null;
+    currentWall.y = wallY !== null ? (wallY <= 0 ? boundary.ymin : boundary.ymax) : null;
+
     const firstGrid = config.grids[0] || [];
 
     if (wallX === null && wallY === null) {
@@ -118,6 +123,190 @@
       });
     }
     render();
+  }
+
+  // --- Rotation helpers (matches Rust rotate_point / rotate_walls) ---
+  function rotatePoint(x, y, angle) {
+    switch (angle) {
+      case 0:   return [x,  y];
+      case 90:  return [y, -x];
+      case 180: return [-x, -y];
+      case 270: return [-y,  x];
+      default:  return [x,  y];
+    }
+  }
+
+  function rotateWalls(xWall, yWall, angle) {
+    switch (angle) {
+      case 0:   return [xWall, yWall];
+      case 90:  return [yWall, xWall !== null ? -xWall : null];
+      case 180: return [xWall !== null ? -xWall : null, yWall !== null ? -yWall : null];
+      case 270: return [yWall !== null ? -yWall : null, xWall];
+      default:  return [xWall, yWall];
+    }
+  }
+
+  // Check if every robot in goalPositions has one match in currentPositions (color + coords).
+  function matchPositions(currentPositions, goalPositions) {
+    const used = new Set();
+    for (const [gc, gx, gy] of goalPositions) {
+      const idx = currentPositions.findIndex(([cc, cx, cy], i) =>
+        !used.has(i) && cc === gc && cx === gx && cy === gy
+      );
+      if (idx < 0) return false;
+      used.add(idx);
+    }
+    return true;
+  }
+
+  // --- Compute effective walls from boundary proximity ---
+  // A boundary edge becomes a wall when any robot is within `vis` of it.
+  function computeEffectiveWall(vis) {
+    let xWall = null, yWall = null;
+    for (const [, x, y] of robots) {
+      if (xWall === null && boundary.xmax - x <= vis && boundary.xmax - x >= 0) xWall = boundary.xmax;
+      if (xWall === null && x - boundary.xmin <= vis && x - boundary.xmin >= 0) xWall = boundary.xmin;
+      if (yWall === null && boundary.ymax - y <= vis && boundary.ymax - y >= 0) yWall = boundary.ymax;
+      if (yWall === null && y - boundary.ymin <= vis && y - boundary.ymin >= 0) yWall = boundary.ymin;
+    }
+    return { x: xWall, y: yWall };
+  }
+
+  // --- Helper: format a robot list for logging ---
+  function fmtRobots(rs) {
+    return rs.map(([c, x, y]) => `${c}(${x},${y})`).join(' ');
+  }
+
+  // Try every goal/rotation/reference combination.
+  // Returns { robots, goalIndex, rotation } on success, or null.
+  function tryNextStep() {
+    const goals = window.activeSimulationConfigs;
+    if (!goals || goals.length === 0 || robots.length === 0) {
+      console.warn('[Next] No goals loaded or no robots on grid.');
+      return null;
+    }
+
+    const vis = parseInt(document.getElementById('visibility-input')?.value) || 1;
+    const effWall = computeEffectiveWall(vis);
+
+    console.group(
+      `[Next] robots: ${fmtRobots(robots)} | vis=${vis} | eff-wall x=${effWall.x ?? '–'} y=${effWall.y ?? '–'}`
+    );
+
+    for (let refIdx = 0; refIdx < robots.length; refIdx++) {
+      const [, refX, refY] = robots[refIdx];
+      const adjCurrent = robots.map(([c, x, y]) => [c, x - refX, y - refY]);
+      const adjXWall   = effWall.x !== null ? effWall.x - refX : null;
+      const adjYWall   = effWall.y !== null ? effWall.y - refY : null;
+
+      for (let gi = 0; gi < goals.length; gi++) {
+        const config   = goals[gi];
+        const startPos = config.grids[0] || [];
+        const endPos   = config.grids[config.grids.length - 1] || [];
+        if (startPos.length === 0 || endPos.length === 0) continue;
+        if (startPos.length !== robots.length) continue;
+
+        let goalXWall = null, goalYWall = null;
+        if (config.walls) {
+          config.walls.forEach(wall => {
+            if (wall.type === 'vertical')   goalXWall = wall.x1;
+            if (wall.type === 'horizontal') goalYWall = wall.y1;
+          });
+        }
+
+        for (let ruleRefIdx = 0; ruleRefIdx < startPos.length; ruleRefIdx++) {
+          const [, ruleRefX, ruleRefY] = startPos[ruleRefIdx];
+          const adjStart  = startPos.map(([c, x, y]) => [c, x - ruleRefX, y - ruleRefY]);
+          const adjEnd    = endPos.map(([c, x, y])   => [c, x - ruleRefX, y - ruleRefY]);
+          const gXWallAdj = goalXWall !== null ? goalXWall - ruleRefX : null;
+          const gYWallAdj = goalYWall !== null ? goalYWall - ruleRefY : null;
+
+          for (const angle of [0, 90, 180, 270]) {
+            const rotStart = adjStart.map(([c, x, y]) => { const [rx, ry] = rotatePoint(x, y, angle); return [c, rx, ry]; });
+            const rotEnd   = adjEnd.map(([c, x, y])   => { const [rx, ry] = rotatePoint(x, y, angle); return [c, rx, ry]; });
+            const [rotGoalXWall, rotGoalYWall] = rotateWalls(gXWallAdj, gYWallAdj, angle);
+
+            const xWallOk = adjXWall === null
+              ? rotGoalXWall === null
+              : rotGoalXWall !== null && adjXWall === rotGoalXWall;
+            const yWallOk = adjYWall === null
+              ? rotGoalYWall === null
+              : rotGoalYWall !== null && adjYWall === rotGoalYWall;
+            if (!xWallOk || !yWallOk) continue; // wall mismatch — skip silently
+
+            const posMatch = matchPositions(adjCurrent, rotStart);
+            console.log(
+              `  Goal${gi + 1} ruleRef=${ruleRefIdx} ${angle}°` +
+              ` | wall(x=${rotGoalXWall ?? '–'},y=${rotGoalYWall ?? '–'}) vs cur(x=${adjXWall ?? '–'},y=${adjYWall ?? '–'}) ✓` +
+              ` | cur=[${fmtRobots(adjCurrent)}] vs goal=[${fmtRobots(rotStart)}]` +
+              ` | pos: ${posMatch ? '✓ MATCH' : '✗ no match'}`
+            );
+
+            if (!posMatch) continue;
+
+            const newRobots = robots.map(([c, x, y]) => {
+              const adjX = x - refX;
+              const adjY = y - refY;
+              const si = rotStart.findIndex(([sc, sx, sy]) => sc === c && sx === adjX && sy === adjY);
+              if (si >= 0) {
+                const dx = rotEnd[si][1] - rotStart[si][1];
+                const dy = rotEnd[si][2] - rotStart[si][2];
+                // use rotEnd color (r2): may differ from current color (e.g. L→R in goal 2)
+                return [rotEnd[si][0], x + dx, y + dy];
+              }
+              return [c, x, y];
+            });
+
+            console.log(
+              `  ✓ APPLY Goal${gi + 1} | refRobot=${refIdx} ruleRef=${ruleRefIdx} rot=${angle}°` +
+              ` | ${fmtRobots(robots)} → ${fmtRobots(newRobots)}`
+            );
+            console.groupEnd();
+            return { robots: newRobots, goalIndex: gi, rotation: angle };
+          }
+        }
+      }
+    }
+
+    console.log('  ✗ No matching goal found for current positions.');
+    console.groupEnd();
+    return null;
+  }
+
+  // Perform one step: find a matching goal and update robots.
+  function nextStep() {
+    const btn  = document.getElementById('next-step-btn');
+    const info = document.getElementById('next-step-info');
+    const result = tryNextStep();
+
+    if (result) {
+      robots = result.robots;
+      render();
+      if (info) {
+        info.textContent =
+          `✓ Goal ${result.goalIndex + 1} | rot ${result.rotation}° | ${fmtRobots(result.robots)}`;
+        info.style.color = '#1b5e20';
+      }
+      if (btn) {
+        const orig = btn.style.background;
+        btn.style.background = 'linear-gradient(145deg,#c8e6c9,#a5d6a7)';
+        btn.style.color = '#1b5e20';
+        setTimeout(() => { btn.style.background = orig; btn.style.color = '#1565c0'; }, 400);
+      }
+    } else {
+      if (info) {
+        info.textContent = '✗ No matching goal found';
+        info.style.color = '#b71c1c';
+      }
+      if (btn) {
+        btn.style.background = 'linear-gradient(145deg,#ffcdd2,#ef9a9a)';
+        btn.style.color = '#b71c1c';
+        setTimeout(() => {
+          btn.style.background = 'linear-gradient(145deg,#e3f2fd,#bbdefb)';
+          btn.style.color = '#1565c0';
+        }, 500);
+      }
+    }
   }
 
   // --- Boundary apply ---
@@ -168,6 +357,9 @@
 
     const sel = document.getElementById("goal-select");
     if (sel) sel.addEventListener("change", applyBoundaries);
+
+    const nextBtn = document.getElementById("next-step-btn");
+    if (nextBtn) nextBtn.addEventListener("click", nextStep);
   }
 
   // --- Auto-init on page load ---
