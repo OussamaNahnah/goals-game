@@ -1005,11 +1005,11 @@
               </div>
 
               <!-- Grid Canvas -->
-              <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: auto; min-height: 320px;">
-                <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff;">
+              <div id="canvas-area" style="flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 10px; overflow: auto; min-height: 320px; flex-wrap: wrap;">
+                <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff; flex-shrink: 0;">
                   <canvas id="movement-grid-canvas" width="300" height="300"></canvas>
                 </div>
-                <div id="automaton-container" style="display:none; margin-top: 8px; border: 1px solid #cce5ff; border-radius: 4px; background: #f8fbff;">
+                <div id="automaton-container" style="display:none; border: 1px solid #cce5ff; border-radius: 4px; background: #f8fbff; flex-shrink: 0;">
                   <canvas id="automaton-canvas" width="280" height="280"></canvas>
                 </div>
               </div>

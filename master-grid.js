@@ -911,7 +911,17 @@
     if (automChk) automChk.addEventListener('change', () => {
       showAutomaton = automChk.checked;
       const cont = document.getElementById('automaton-container');
+      const area = document.getElementById('canvas-area');
       if (cont) cont.style.display = showAutomaton ? 'block' : 'none';
+      if (area && showAutomaton) {
+        // Side-by-side if the column is wide enough (≥630px), else stack vertically
+        const wide = area.offsetWidth >= 630;
+        area.style.flexDirection = wide ? 'row' : 'column';
+        area.style.alignItems = 'center';
+      } else if (area) {
+        area.style.flexDirection = 'row';
+        area.style.alignItems = 'center';
+      }
       if (showAutomaton) { automatonCache = null; drawAutomaton(); }
     });
 
