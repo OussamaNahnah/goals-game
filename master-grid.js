@@ -24,6 +24,7 @@
   let playing = false;    // true when auto-play is active
   let playTimer = null;   // setInterval handle
   let trailMode = false;  // when true draw movement lines instead of (or over) dots
+  let ghostMode = false;  // when true draw a single swarm-centroid path line across all steps
   let trajectories = [];  // [{goalIndex, segments:[{fx,fy,tx,ty}]}] — one entry per applied step
   let showAutomaton = false;   // show goal-transition automaton diagram
   let automatonCache = null;   // [{from,to}] — invalidated when goals change
@@ -100,6 +101,7 @@
     drawGrid(ctx);
     drawBoundary(ctx);
     if (trailMode && trajectories.length > 0) drawTrajectories(ctx, 0.75);
+    if (ghostMode && trajectories.length > 0) drawGhost(ctx);
     drawRobots(ctx);
     const showBox = document.getElementById('show-goal-box')?.checked !== false;
     if (showBox && pendingGoalBox) drawGoalBoundaryBox(ctx, pendingGoalBox, 1);
@@ -215,6 +217,90 @@
     });
   }
 
+  // Draw a single continuous path connecting swarm centroids across all steps.
+  // Represents the strategy/direction of the whole swarm as one long line.
+  function drawGhost(ctx) {
+    if (trajectories.length === 0) return;
+
+    // Build centroid path: starting centroid + one centroid per step end.
+    // Each trajectory entry has segments [{fx,fy,tx,ty}] — from = start, to = end.
+    const points = []; // {cx, cy} in canvas coords
+
+    // Starting centroid (from-positions of first step)
+    const first = trajectories[0].segments;
+    const sx = first.reduce((s, seg) => s + seg.fx, 0) / first.length;
+    const sy = first.reduce((s, seg) => s + seg.fy, 0) / first.length;
+    points.push(worldToCanvas(sx, sy));
+
+    // End centroid for every step
+    for (const traj of trajectories) {
+      const segs = traj.segments;
+      const ex = segs.reduce((s, seg) => s + seg.tx, 0) / segs.length;
+      const ey = segs.reduce((s, seg) => s + seg.ty, 0) / segs.length;
+      points.push(worldToCanvas(ex, ey));
+    }
+
+    if (points.length < 2) return;
+
+    const SWARM_PATH_COLOR = '#0369a1';
+
+    ctx.save();
+
+    // Draw the continuous path
+    ctx.globalAlpha = 0.80;
+    ctx.strokeStyle = SWARM_PATH_COLOR;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(points[0].cx, points[0].cy);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].cx, points[i].cy);
+    ctx.stroke();
+
+    // Small dot at each centroid waypoint
+    ctx.globalAlpha = 0.60;
+    ctx.fillStyle = SWARM_PATH_COLOR;
+    for (let i = 0; i < points.length - 1; i++) {
+      ctx.beginPath();
+      ctx.arc(points[i].cx, points[i].cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Arrowhead at every segment end (direction indicators)
+    ctx.globalAlpha = 0.90;
+    ctx.fillStyle = SWARM_PATH_COLOR;
+    for (let i = 1; i < points.length; i++) {
+      const p1 = points[i - 1], p2 = points[i];
+      if (Math.abs(p2.cx - p1.cx) < 1 && Math.abs(p2.cy - p1.cy) < 1) continue; // no movement
+      const ang  = Math.atan2(p2.cy - p1.cy, p2.cx - p1.cx);
+      // Place arrowhead at midpoint so it doesn't overlap the robot dot
+      const mx = (p1.cx + p2.cx) / 2, my = (p1.cy + p2.cy) / 2;
+      const aLen = 8, aWid = 0.42;
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx - aLen * Math.cos(ang - aWid), my - aLen * Math.sin(ang - aWid));
+      ctx.lineTo(mx - aLen * Math.cos(ang + aWid), my - aLen * Math.sin(ang + aWid));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Filled dot at the current (last) centroid — slightly larger
+    const last = points[points.length - 1];
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = SWARM_PATH_COLOR;
+    ctx.beginPath();
+    ctx.arc(last.cx, last.cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(last.cx, last.cy, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   // Transition animation: robots fade at midpoint; current goal box shown throughout.
   // After animation ends, render() draws pendingGoalBox (the next goal).
   const ANIM_DURATION = 520;
@@ -233,6 +319,7 @@
 
       // Trail: all previous at fixed alpha, newest fades in with t
       if (trailMode && trajectories.length > 0) drawTrajectories(ctx_anim, t);
+      if (ghostMode && trajectories.length > 0) drawGhost(ctx_anim);
 
       // Show the current step's real goal boundary throughout the animation
       const showBox = document.getElementById('show-goal-box')?.checked !== false;
@@ -508,7 +595,7 @@
       if (history.length >= HISTORY_MAX) history.shift(); // drop oldest when full
       history.push(from);                    // save for prevStep
       // Record trajectory segment for trail mode
-      const segments = from.map((r, i) => ({ fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
+      const segments = from.map((r, i) => ({ color: r[0], fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
       trajectories.push({ goalIndex: result.goalIndex, segments });
       automatonCache = null;                 // rebuild automaton trace on next draw
       robots = result.robots;                // advance logical state immediately
@@ -904,6 +991,13 @@
     if (trailChk) trailChk.addEventListener('change', () => {
       trailMode = trailChk.checked;
       if (!trailMode) trajectories = [];
+      render();
+    });
+
+    const ghostChk = document.getElementById('ghost-mode-chk');
+    if (ghostChk) ghostChk.addEventListener('change', () => {
+      ghostMode = ghostChk.checked;
+      if (!ghostMode) trajectories = [];
       render();
     });
 
