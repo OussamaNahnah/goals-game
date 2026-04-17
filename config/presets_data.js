@@ -897,11 +897,6 @@ const algorithmPresets = [
     title: "Exec6 | Algo2 | Opacity | V1",
     description: "New algorithm with opacity with the same parameters as the existing Algorithm2",
     data: exec2
-  },
-    {
-    title: "Exec8 | Algo2 | Opacity | new",
-    description: "New algorithm with opacity with the same parameters as the existing Algorithm1",
-    data: exec8
   }
 
 ];
