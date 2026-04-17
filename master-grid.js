@@ -462,38 +462,63 @@
       return null;
     }
 
-    const vis = parseInt(document.getElementById('visibility-input')?.value) || 1;
-    const effWall = computeEffectiveWall(vis);
-
     console.group(
-      `[Next] robots: ${fmtRobots(robots)} | vis=${vis} | eff-wall x=${effWall.x ?? '–'} y=${effWall.y ?? '–'}`
+      `[Next] robots: ${fmtRobots(robots)} | boundary x:[${boundary.xmin}..${boundary.xmax}] y:[${boundary.ymin}..${boundary.ymax}]`
     );
 
-    for (let refIdx = 0; refIdx < robots.length; refIdx++) {
-      const [, refX, refY] = robots[refIdx];
-      const adjCurrent = robots.map(([c, x, y]) => [c, x - refX, y - refY]);
-      const adjXWall   = effWall.x !== null ? effWall.x - refX : null;
-      const adjYWall   = effWall.y !== null ? effWall.y - refY : null;
+    // --- Helper: compute wall score for a goal (number of axes it constrains). ---
+    function goalWallScore(config) {
+      let x = null, y = null;
+      if (config.walls) {
+        config.walls.forEach(w => {
+          if (w.type === 'vertical')   x = w.x1;
+          if (w.type === 'horizontal') y = w.y1;
+        });
+      }
+      return (x !== null ? 1 : 0) + (y !== null ? 1 : 0);
+    }
 
-      for (let gi = 0; gi < goals.length; gi++) {
-        const config   = goals[gi];
-        const startPos = config.grids[0] || [];
-        const endPos   = config.grids[config.grids.length - 1] || [];
-        if (startPos.length === 0 || endPos.length === 0) continue;
-        if (startPos.length !== robots.length) continue;
+    // Sort goals descending by wall count (2 → 1 → 0) while preserving original indices.
+    const sorted = goals
+      .map((cfg, idx) => ({ cfg, idx, score: goalWallScore(cfg) }))
+      .sort((a, b) => b.score - a.score);
 
-        let goalXWall = null, goalYWall = null;
-        if (config.walls) {
-          config.walls.forEach(wall => {
-            if (wall.type === 'vertical')   goalXWall = wall.x1;
-            if (wall.type === 'horizontal') goalYWall = wall.y1;
-          });
-        }
+    // Iterate wall-score levels in order. At each level collect ALL matches.
+    // The first level that yields ANY match is decisive:
+    //   - exactly 1 match → apply it
+    //   - 2+ matches at the same level → duplicate-entry error, stop
+    let currentScore = -1;
+    let levelMatches = [];
+
+    for (const { cfg: config, idx: gi, score: wallScore } of sorted) {
+      // When we drop to a lower wall level and already have matches, stop scanning.
+      if (levelMatches.length > 0 && wallScore < currentScore) break;
+      currentScore = wallScore;
+
+      const startPos = config.grids[0] || [];
+      const endPos   = config.grids[config.grids.length - 1] || [];
+      if (startPos.length === 0 || endPos.length === 0) continue;
+      if (startPos.length !== robots.length) continue;
+
+      let goalXWall = null, goalYWall = null;
+      if (config.walls) {
+        config.walls.forEach(wall => {
+          if (wall.type === 'vertical')   goalXWall = wall.x1;
+          if (wall.type === 'horizontal') goalYWall = wall.y1;
+        });
+      }
+
+      // Deduplicate across refIdx: same (goalIndex, rotation) pair counts once.
+      const seenForGoal = new Set();
+
+      for (let refIdx = 0; refIdx < robots.length; refIdx++) {
+        const [, refX, refY] = robots[refIdx];
+        const adjCurrent = robots.map(([c, x, y]) => [c, x - refX, y - refY]);
 
         for (let ruleRefIdx = 0; ruleRefIdx < startPos.length; ruleRefIdx++) {
           const [, ruleRefX, ruleRefY] = startPos[ruleRefIdx];
-          const adjStart  = startPos.map(([c, x, y]) => [c, x - ruleRefX, y - ruleRefY]);
-          const adjEnd    = endPos.map(([c, x, y])   => [c, x - ruleRefX, y - ruleRefY]);
+          const adjStart = startPos.map(([c, x, y]) => [c, x - ruleRefX, y - ruleRefY]);
+          const adjEnd   = endPos.map(([c, x, y])   => [c, x - ruleRefX, y - ruleRefY]);
           const gXWallAdj = goalXWall !== null ? goalXWall - ruleRefX : null;
           const gYWallAdj = goalYWall !== null ? goalYWall - ruleRefY : null;
 
@@ -502,43 +527,43 @@
             const rotEnd   = adjEnd.map(([c, x, y])   => { const [rx, ry] = rotatePoint(x, y, angle); return [c, rx, ry]; });
             const [rotGoalXWall, rotGoalYWall] = rotateWalls(gXWallAdj, gYWallAdj, angle);
 
-            const xWallOk = adjXWall === null
-              ? rotGoalXWall === null
-              : rotGoalXWall !== null && adjXWall === rotGoalXWall;
-            const yWallOk = adjYWall === null
-              ? rotGoalYWall === null
-              : rotGoalYWall !== null && adjYWall === rotGoalYWall;
-            if (!xWallOk || !yWallOk) continue; // wall mismatch — skip silently
+            // Wall check: if the goal requires a wall, its absolute position on the
+            // master grid (refX + relative wall) must coincide with a boundary edge.
+            // No visibility / proximity needed — purely geometric.
+            let xWallOk = true;
+            if (rotGoalXWall !== null) {
+              const abs = refX + rotGoalXWall;
+              xWallOk = (abs === boundary.xmin || abs === boundary.xmax);
+            }
+            let yWallOk = true;
+            if (rotGoalYWall !== null) {
+              const abs = refY + rotGoalYWall;
+              yWallOk = (abs === boundary.ymin || abs === boundary.ymax);
+            }
+            if (!xWallOk || !yWallOk) continue;
 
             const posMatch = matchPositions(adjCurrent, rotStart);
             console.log(
-              `  Goal${gi + 1} ruleRef=${ruleRefIdx} ${angle}°` +
-              ` | wall(x=${rotGoalXWall ?? '–'},y=${rotGoalYWall ?? '–'}) vs cur(x=${adjXWall ?? '–'},y=${adjYWall ?? '–'}) ✓` +
+              `  Goal${gi + 1} ruleRef=${ruleRefIdx} ${angle}° wallScore=${wallScore}` +
+              ` walls:${xWallOk&&yWallOk?'✓':'✗'}` +
               ` | cur=[${fmtRobots(adjCurrent)}] vs goal=[${fmtRobots(rotStart)}]` +
-              ` | pos: ${posMatch ? '✓ MATCH' : '✗ no match'}`
+              ` | pos:${posMatch?'✓ MATCH':'✗'}`
             );
-
             if (!posMatch) continue;
 
+            const dedupKey = `${gi}-${angle}`;
+            if (seenForGoal.has(dedupKey)) continue;
+            seenForGoal.add(dedupKey);
+
             const newRobots = robots.map(([c, x, y]) => {
-              const adjX = x - refX;
-              const adjY = y - refY;
+              const adjX = x - refX, adjY = y - refY;
               const si = rotStart.findIndex(([sc, sx, sy]) => sc === c && sx === adjX && sy === adjY);
               if (si >= 0) {
-                const dx = rotEnd[si][1] - rotStart[si][1];
-                const dy = rotEnd[si][2] - rotStart[si][2];
-                // use rotEnd color (r2): may differ from current color (e.g. L→R in goal 2)
-                return [rotEnd[si][0], x + dx, y + dy];
+                return [rotEnd[si][0], x + rotEnd[si][1] - rotStart[si][1], y + rotEnd[si][2] - rotStart[si][2]];
               }
               return [c, x, y];
             });
 
-            console.log(
-              `  ✓ APPLY Goal${gi + 1} | refRobot=${refIdx} ruleRef=${ruleRefIdx} rot=${angle}°` +
-              ` | ${fmtRobots(robots)} → ${fmtRobots(newRobots)}`
-            );
-            console.groupEnd();
-            // Compute real goal boundary corners in master-grid world coords
             const goalBounds = config.boundaries || { xmin: -2, xmax: 2, ymin: -2, ymax: 2 };
             const goalBoxCorners = [
               [goalBounds.xmin, goalBounds.ymin],
@@ -549,18 +574,41 @@
               const [rx, ry] = rotatePoint(bx - ruleRefX, by - ruleRefY, angle);
               return [rx + refX, ry + refY];
             });
-            return {
-              robots: newRobots, goalIndex: gi, rotation: angle,
+
+            levelMatches.push({
+              robots: newRobots, goalIndex: gi, rotation: angle, wallScore,
               goalBox: { corners: goalBoxCorners, goalIndex: gi },
-            };
+            });
           }
         }
       }
     }
 
-    console.log('  ✗ No matching goal found for current positions.');
+    if (levelMatches.length === 0) {
+      console.log('  ✗ No matching goal found.');
+      console.groupEnd();
+      return null;
+    }
+
+    // Deduplicate levelMatches by goalIndex (multiple refIdx can yield the same goal).
+    const byGoal = new Map();
+    for (const m of levelMatches) {
+      if (!byGoal.has(m.goalIndex)) byGoal.set(m.goalIndex, m);
+    }
+    const uniqueMatches = [...byGoal.values()];
+
+    if (uniqueMatches.length > 1) {
+      // True tie at the same wall level → duplicate entry definition error.
+      const tieLabels = uniqueMatches.map(m => `G${m.goalIndex + 1}`).join(', ');
+      console.warn(`  ✗ Duplicate entry: [${tieLabels}] match at wallScore=${currentScore} — ambiguous.`);
+      console.groupEnd();
+      return { duplicate: true, tieLabels };
+    }
+
+    const best = uniqueMatches[0];
+    console.log(`  ✓ APPLY Goal${best.goalIndex + 1} rot=${best.rotation}° wallScore=${best.wallScore} | ${fmtRobots(robots)} → ${fmtRobots(best.robots)}`);
     console.groupEnd();
-    return null;
+    return { ...best, alts: 0 };
   }
 
   // Highlight the goal frame in the simulator column.
@@ -590,24 +638,33 @@
 
     const result = tryNextStep();
 
-    if (result) {
-      const from = robots.map(r => [...r]);  // snapshot before advancing
-      if (history.length >= HISTORY_MAX) history.shift(); // drop oldest when full
-      history.push(from);                    // save for prevStep
-      // Record trajectory segment for trail mode
+    if (result && result.duplicate) {
+      if (playing) stopPlay();
+      if (info) {
+        info.textContent = `⚠ Duplicate entry: ${result.tieLabels} match equally — fix goal definitions`;
+        info.style.color = '#b71c1c';
+      }
+      if (btn) {
+        btn.style.background = 'linear-gradient(145deg,#fff3cd,#ffe082)';
+        btn.style.color = '#7b4f00';
+        setTimeout(() => { btn.style.background = 'linear-gradient(145deg,#e3f2fd,#bbdefb)'; btn.style.color = '#1565c0'; }, 600);
+      }
+    } else if (result) {
+      const from = robots.map(r => [...r]);
+      if (history.length >= HISTORY_MAX) history.shift();
+      history.push(from);
       const segments = from.map((r, i) => ({ color: r[0], fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
       trajectories.push({ goalIndex: result.goalIndex, segments });
-      automatonCache = null;                 // rebuild automaton trace on next draw
-      robots = result.robots;                // advance logical state immediately
-      activeGoalIdx = result.goalIndex;      // highlight in automaton
+      automatonCache = null;
+      robots = result.robots;
+      activeGoalIdx = result.goalIndex;
       const peek = tryNextStep();
       const showBox = document.getElementById('show-goal-box')?.checked !== false;
-      pendingGoalBox = (showBox && peek) ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
+      pendingGoalBox = (showBox && peek && !peek.duplicate) ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
       animateStep(from, result.robots, result.goalIndex, result.goalBox);
       highlightGoalFrame(result.goalIndex);
       if (info) {
-        info.textContent =
-          `✓ Goal ${result.goalIndex + 1} | rot ${result.rotation}° | ${fmtRobots(result.robots)}`;
+        info.textContent = `✓ Goal ${result.goalIndex + 1} | rot ${result.rotation}° | ${fmtRobots(result.robots)}`;
         info.style.color = '#1b5e20';
       }
       if (btn) {
