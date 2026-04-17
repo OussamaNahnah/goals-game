@@ -1411,6 +1411,7 @@ function closeFrame(configId) {
   );
   delete frameElements[configId];
   renderAllFrames();
+  if (window.refreshMovementGoalSelect) window.refreshMovementGoalSelect();
 }
 
 function updateSteps(configId, newValue) {
@@ -3249,6 +3250,7 @@ function handleFrameDrop(e) {
   }
   removeDropIndicator();
   renderAllFrames();
+  if (window.refreshMovementGoalSelect) window.refreshMovementGoalSelect();
 }
 
 function handleFrameDragEnd(e) {
