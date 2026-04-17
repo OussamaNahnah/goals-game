@@ -3538,7 +3538,6 @@
               const isOpen = movementColumn.style.display !== "none";
               if (isOpen) {
                 setPanelOpen(movementColumn, toggleMovementBtn, false);
-                setPanelOpen(editorColumn, toggleEditorBtn, true);
               } else {
                 setPanelOpen(editorColumn, toggleEditorBtn, false);
                 setPanelOpen(movementColumn, toggleMovementBtn, true);
@@ -3553,8 +3552,6 @@
               const isOpen = editorColumn.style.display !== "none";
               if (isOpen) {
                 setPanelOpen(editorColumn, toggleEditorBtn, false);
-                setPanelOpen(movementColumn, toggleMovementBtn, true);
-                if (typeof window.initMovementGrid === 'function') window.initMovementGrid();
               } else {
                 setPanelOpen(movementColumn, toggleMovementBtn, false);
                 setPanelOpen(editorColumn, toggleEditorBtn, true);
@@ -4818,7 +4815,12 @@
 
         // Auto-initialize if this code is being run standalone (not embedded)
         if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", initialize);
+          document.addEventListener("DOMContentLoaded", function () {
+            // Check after DOM is complete — skip auto-init if embedded in config wizard
+            if (!document.getElementById("page-1")) {
+              initialize();
+            }
+          });
         } else {
           // DOM already loaded, initialize immediately if standalone
           if (!document.getElementById("page-1")) {
