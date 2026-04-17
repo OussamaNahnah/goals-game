@@ -4598,7 +4598,12 @@ window.initializeEmbeddedGoalsSimulator = initialize;
 
 // Auto-initialize if this code is being run standalone (not embedded)
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initialize);
+  document.addEventListener("DOMContentLoaded", function () {
+    // Check after DOM is complete — skip auto-init if embedded in config wizard
+    if (!document.getElementById("page-1")) {
+      initialize();
+    }
+  });
 } else {
   // DOM already loaded, initialize immediately if standalone
   if (!document.getElementById("page-1")) {

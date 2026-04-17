@@ -775,7 +775,8 @@
   }
 
   function computeGridSizes() {
-    const vis      = parseInt(document.getElementById('visibility-input')?.value) ||
+    const vis      = parseInt(document.getElementById('visibility_range')?.value) ||
+                     parseInt(document.getElementById('visibility-display')?.textContent) ||
                      (typeof defaultVisibility  !== 'undefined' ? defaultVisibility  : 1);
     const nRobots  = typeof defaultNumRobots !== 'undefined' ? defaultNumRobots : 3;
     const B = vis * (nRobots + 1) + 3;
@@ -1076,6 +1077,26 @@
       if (showAutomaton) { automatonCache = null; drawAutomaton(); }
     });
 
+    // Sync initial checkbox states into JS variables (in case checkboxes are pre-checked in HTML)
+    if (ghostChk) {
+      ghostMode = ghostChk.checked;
+    }
+    if (trailChk) {
+      trailMode = trailChk.checked;
+    }
+    if (automChk) {
+      showAutomaton = automChk.checked;
+      const cont = document.getElementById('automaton-container');
+      const area = document.getElementById('canvas-area');
+      if (cont) cont.style.display = showAutomaton ? 'block' : 'none';
+      if (area && showAutomaton) {
+        const wide = area.offsetWidth >= 630;
+        area.style.flexDirection = wide ? 'row' : 'column';
+        area.style.alignItems = 'center';
+      }
+      if (showAutomaton) { automatonCache = null; drawAutomaton(); }
+    }
+
     const gridSizeSel = document.getElementById('grid-size-select');
     if (gridSizeSel) gridSizeSel.addEventListener('change', () => {
       if (gridSizeSel.value === 'preset-6') {
@@ -1086,14 +1107,18 @@
       }
     });
 
-    const visInput = document.getElementById('visibility-input');
-    if (visInput) {
-      // Seed default from defaultVisibility constant if input still has the placeholder value
-      if (typeof defaultVisibility !== 'undefined') {
-        visInput.value = defaultVisibility;
-      }
-      visInput.addEventListener('change', () => populateGridSizeSelect());
+    // Sync visibility display label from the page's visibility_range param input
+    function syncVisDisplay() {
+      const pageVis = parseInt(document.getElementById('visibility_range')?.value);
+      const val = (!isNaN(pageVis) && pageVis > 0) ? pageVis
+        : (typeof defaultVisibility !== 'undefined' ? defaultVisibility : 1);
+      const dispEl = document.getElementById('visibility-display');
+      if (dispEl) dispEl.textContent = val;
+      populateGridSizeSelect();
     }
+    syncVisDisplay();
+    const visRangeInput = document.getElementById('visibility_range');
+    if (visRangeInput) visRangeInput.addEventListener('input', syncVisDisplay);
 
     document.addEventListener('keydown', (e) => {
       // Only act when the movement panel is visible
