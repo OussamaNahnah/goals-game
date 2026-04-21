@@ -1117,28 +1117,28 @@ const algorithmPresets = [
   },
   {
     title: "2R-3C-V1 | Ex02",
+    description: "like {2R-3C-V1 | Ex01 ★ Algo1} strategy but with different moving patterns.",
+    data: exec7
+  },
+  {
+    title: "2R-3C-V1 | Ex03",
     description: "Return same line, horizontal turn at 5th corner.",
     data: exec5
   },
   {
-    title: "2R-3C-V1 | Ex03",
+    title: "2R-3C-V1 | Ex04",
     description: "Return next line at 1st corner.",
     data: exec5_2
   },
   {
-    title: "2R-3C-V1 | Ex04",
+    title: "2R-3C-V1 | Ex05",
     description: "Return same line, horizontal turn at corner.",
     data: exec5_3
   },
   {
-    title: "2R-3C-V1 | Ex05 ⚠️ BAD",
+    title: "2R-3C-V1 | Ex06 ⚠️ BAD",
     description: "⚠️ BAD — Go line, return next line (horizontal robots format).",
     data: exec6
-  },
-  {
-    title: "2R-3C-V1 | Ex06 ",
-    description: "like {2R-3C-V1 | Ex01 ★ Algo1} strategy but with different moving patterns.",
-    data: exec7
   },
 
   // ═══════════════════════════════════════════════════
