@@ -1077,6 +1077,26 @@
       if (showAutomaton) { automatonCache = null; drawAutomaton(); }
     });
 
+    // Sync initial checkbox states into JS variables (in case checkboxes are pre-checked in HTML)
+    if (ghostChk) {
+      ghostMode = ghostChk.checked;
+    }
+    if (trailChk) {
+      trailMode = trailChk.checked;
+    }
+    if (automChk) {
+      showAutomaton = automChk.checked;
+      const cont = document.getElementById('automaton-container');
+      const area = document.getElementById('canvas-area');
+      if (cont) cont.style.display = showAutomaton ? 'block' : 'none';
+      if (area && showAutomaton) {
+        const wide = area.offsetWidth >= 630;
+        area.style.flexDirection = wide ? 'row' : 'column';
+        area.style.alignItems = 'center';
+      }
+      if (showAutomaton) { automatonCache = null; drawAutomaton(); }
+    }
+
     const gridSizeSel = document.getElementById('grid-size-select');
     if (gridSizeSel) gridSizeSel.addEventListener('change', () => {
       if (gridSizeSel.value === 'preset-6') {
