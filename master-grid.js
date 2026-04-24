@@ -29,6 +29,10 @@
   let showAutomaton = false;   // show goal-transition automaton diagram
   let automatonCache = null;   // [{from,to}] — invalidated when goals change
   let activeGoalIdx  = -1;     // currently highlighted node in automaton
+  let leadToCenterEnabled = false;
+  let playbackRobotStates = [];
+  let leadToCenterReport = null;
+  let leadToCenterFinalState = null; // 'guaranteed' | 'not-guaranteed' | null — locked once set
 
   // --- Coordinate helpers ---
   function worldToCanvas(x, y) {
@@ -38,6 +42,437 @@
   function isWithinBoundary(x, y) {
     return x >= boundary.xmin && x <= boundary.xmax &&
            y >= boundary.ymin && y <= boundary.ymax;
+  }
+
+  function getVisibilityRange() {
+    return parseInt(document.getElementById('visibility_range')?.value) ||
+      parseInt(document.getElementById('visibility-display')?.textContent) ||
+      (typeof defaultVisibility !== 'undefined' ? defaultVisibility : 1);
+  }
+
+  function cloneRobotList(robotList) {
+    return robotList.map(([color, x, y]) => [color, x, y]);
+  }
+
+  function centroidOf(robotList) {
+    if (!robotList.length) return { x: 0, y: 0 };
+    const totals = robotList.reduce((acc, [, x, y]) => {
+      acc.x += x;
+      acc.y += y;
+      return acc;
+    }, { x: 0, y: 0 });
+    return { x: totals.x / robotList.length, y: totals.y / robotList.length };
+  }
+
+  function getCornerKey(walls) {
+    if (walls.x === null || walls.y === null) return null;
+    const vertical = walls.x === boundary.xmin ? 'W' : 'E';
+    const horizontal = walls.y === boundary.ymax ? 'N' : 'S';
+    return `${horizontal}${vertical}`;
+  }
+
+  function cornerKeyToPosition(key) {
+    return { NW: 'top-left', NE: 'top-right', SW: 'bottom-left', SE: 'bottom-right' }[key] || key;
+  }
+
+  // Returns true if `sample` is in space mode AND its centroid is on the inner side
+  // of `refState` relative to the walls of `cornerA` (i.e. past the reference, away from the corner).
+  function isInInversePart(sample, cornerA, refState) {
+    if (sample.mode !== 'space') return false;
+    const ref = refState.centroid;
+    const sc = sample.centroid;
+    if (cornerA.walls.x !== null) {
+      if (cornerA.walls.x === boundary.xmax && !(sc.x < ref.x)) return false;
+      if (cornerA.walls.x === boundary.xmin && !(sc.x > ref.x)) return false;
+    }
+    if (cornerA.walls.y !== null) {
+      if (cornerA.walls.y === boundary.ymax && !(sc.y < ref.y)) return false;
+      if (cornerA.walls.y === boundary.ymin && !(sc.y > ref.y)) return false;
+    }
+    return true;
+  }
+
+  function describeWalls(walls) {
+    const parts = [];
+    if (walls.x !== null) parts.push(walls.x === boundary.xmin ? 'x=min' : 'x=max');
+    if (walls.y !== null) parts.push(walls.y === boundary.ymin ? 'y=min' : 'y=max');
+    return parts.length ? parts.join(', ') : 'none';
+  }
+
+  function snapshotState(robotList, stepIndex) {
+    const centroid = centroidOf(robotList);
+    // Corner/wall/space is determined by the walls of the goal that was executed to reach this state.
+    // A corner = the executed goal has both a vertical wall (x) AND a horizontal wall (y).
+    const traj = stepIndex > 0 ? trajectories[stepIndex - 1] : null;
+    const goalCfg = traj != null ? (window.activeSimulationConfigs?.[traj.goalIndex] ?? null) : null;
+    let gx = null, gy = null;
+    if (goalCfg?.walls) {
+      for (const w of goalCfg.walls) {
+        if (w.type === 'vertical')   gx = w.x1;
+        if (w.type === 'horizontal') gy = w.y1;
+      }
+    }
+    const walls = {
+      x: gx !== null ? (gx <= 0 ? boundary.xmin : boundary.xmax) : null,
+      y: gy !== null ? (gy <= 0 ? boundary.ymin : boundary.ymax) : null,
+    };
+    const wallCount = (walls.x !== null ? 1 : 0) + (walls.y !== null ? 1 : 0);
+    return {
+      stepIndex,
+      centroid,
+      walls,
+      wallCount,
+      mode: wallCount === 2 ? 'corner' : wallCount === 1 ? 'wall' : 'space',
+      cornerKey: getCornerKey(walls),
+    };
+  }
+
+  function isCloseToCorner(state, cornerState) {
+    if (!cornerState?.cornerKey) return false;
+    return (state.walls.x !== null && state.walls.x === cornerState.walls.x) ||
+      (state.walls.y !== null && state.walls.y === cornerState.walls.y);
+  }
+
+  function getTransferProgress(state, fromCorner, toCorner) {
+    const parts = [];
+    if (fromCorner.walls.x !== toCorner.walls.x) {
+      const xSign = toCorner.walls.x === boundary.xmax ? 1 : -1;
+      parts.push(xSign * state.centroid.x);
+    }
+    if (fromCorner.walls.y !== toCorner.walls.y) {
+      const ySign = toCorner.walls.y === boundary.ymax ? 1 : -1;
+      parts.push(ySign * state.centroid.y);
+    }
+    if (!parts.length) return null;
+    return parts.reduce((sum, value) => sum + value, 0);
+  }
+
+  function formatState(state) {
+    const pos = `c=(${state.centroid.x.toFixed(2)}, ${state.centroid.y.toFixed(2)})`;
+    if (state.mode === 'corner') return `corner ${state.cornerKey} [${describeWalls(state.walls)}] ${pos}`;
+    if (state.mode === 'wall') return `wall [${describeWalls(state.walls)}] ${pos}`;
+    return `space ${pos}`;
+  }
+
+  function setLeadToSpaceBadge(text, styleKey) {
+    const badge = document.getElementById('lead-center-state');
+    const panel = document.getElementById('lead-center-panel');
+    const title = document.getElementById('lead-center-title');
+    const summary = document.getElementById('lead-center-summary');
+    if (!badge) return;
+    const palette = {
+      idle: {
+        color: '#991b1b',
+        background: '#fee2e2',
+        border: '#fecaca',
+        panelBorder: '#f5c2c7',
+        panelBackground: 'linear-gradient(180deg,#fff8f8 0%,#fff1f2 100%)',
+        panelShadow: '0 1px 3px rgba(185,28,28,0.08)',
+      },
+      tracking: {
+        color: '#9f1239',
+        background: '#ffe4e6',
+        border: '#fecdd3',
+        panelBorder: '#fda4af',
+        panelBackground: 'linear-gradient(180deg,#fff7f7 0%,#ffecef 100%)',
+        panelShadow: '0 1px 3px rgba(190,24,93,0.10)',
+      },
+      found: {
+        color: '#1e3a8a',
+        background: '#dbeafe',
+        border: '#93c5fd',
+        panelBorder: '#93c5fd',
+        panelBackground: 'linear-gradient(180deg,#f7fbff 0%,#edf5ff 100%)',
+        panelShadow: '0 1px 3px rgba(30,58,138,0.10)',
+      },
+      ok: {
+        color: '#166534',
+        background: '#dcfce7',
+        border: '#86efac',
+        panelBorder: '#86efac',
+        panelBackground: 'linear-gradient(180deg,#f3fff7 0%,#e8fff1 100%)',
+        panelShadow: '0 1px 3px rgba(22,101,52,0.10)',
+      },
+      caution: {
+        color: '#9a3412',
+        background: '#ffedd5',
+        border: '#fdba74',
+        panelBorder: '#fdba74',
+        panelBackground: 'linear-gradient(180deg,#fffaf5 0%,#fff1e6 100%)',
+        panelShadow: '0 1px 3px rgba(154,52,18,0.10)',
+      },
+      done: {
+        color: '#111827',
+        background: '#e5e7eb',
+        border: '#9ca3af',
+        panelBorder: '#9ca3af',
+        panelBackground: 'linear-gradient(180deg,#f9fafb 0%,#f3f4f6 100%)',
+        panelShadow: '0 1px 3px rgba(17,24,39,0.10)',
+      },
+      warn: {
+        color: '#991b1b',
+        background: '#fee2e2',
+        border: '#fecaca',
+        panelBorder: '#fca5a5',
+        panelBackground: 'linear-gradient(180deg,#fff8f8 0%,#ffe8ea 100%)',
+        panelShadow: '0 1px 3px rgba(185,28,28,0.10)',
+      },
+    };
+    const style = palette[styleKey] || palette.idle;
+    badge.textContent = text;
+    badge.style.color = style.color;
+    badge.style.background = style.background;
+    badge.style.borderColor = style.border;
+    if (panel) {
+      panel.style.borderColor = style.panelBorder;
+      panel.style.background = style.panelBackground;
+      panel.style.boxShadow = style.panelShadow;
+    }
+    if (title) title.style.color = style.color;
+    if (summary) summary.style.color = style.color;
+  }
+
+  function updateLeadToSpacePanel() {
+    const panel = document.getElementById('lead-center-panel');
+    const summary = document.getElementById('lead-center-summary');
+    if (!panel || !summary) return;
+
+    panel.style.display = leadToCenterEnabled ? 'block' : 'none';
+    if (!leadToCenterEnabled) return;
+
+    if (!leadToCenterReport) {
+      setLeadToSpaceBadge('Checking', 'idle');
+      summary.textContent = '';
+      return;
+    }
+
+    const hasCycle = (leadToCenterReport.explorationCyclesFound ?? 0) >= 1;
+
+    // Once a final state is locked, skip badge update but still render summary below.
+    if (leadToCenterFinalState === 'guaranteed') {
+      setLeadToSpaceBadge('Guaranteed', 'ok');
+    } else if (leadToCenterFinalState === 'not-guaranteed') {
+      setLeadToSpaceBadge('Not guaranteed', 'caution');
+    } else if (hasCycle) {
+      leadToCenterFinalState = 'not-guaranteed';
+      setLeadToSpaceBadge('Not guaranteed', 'caution');
+    } else if (leadToCenterReport.anySuccess) {
+      leadToCenterFinalState = 'guaranteed';
+      setLeadToSpaceBadge('Guaranteed', 'ok');
+    } else {
+      setLeadToSpaceBadge('Checking', 'idle');
+    }
+
+    const cyclesEl = document.getElementById('exploration-cycles-count');
+    if (cyclesEl) cyclesEl.textContent = leadToCenterReport.explorationCyclesFound ?? 0;
+
+    // Build phased progress lines
+    function buildPhasedHTML() {
+      const a = leadToCenterReport.cornerA;
+      const r = leadToCenterReport.ref;
+      const activEp = leadToCenterReport.activeEpisode;
+      const succEp = leadToCenterReport.successfulEpisode;
+      const goalX = succEp?.goalX || activEp?.goalX;
+      const cornerBState = succEp?.toCorner;
+      const isNotGuaranteed = leadToCenterFinalState === 'not-guaranteed';
+
+      const s1 = a ? 'found' : (isNotGuaranteed ? 'blocked' : 'searching');
+      const s2 = !a ? 'pending' : (r ? 'found' : (isNotGuaranteed ? 'blocked' : 'searching'));
+      const s3 = !r ? 'pending' : (goalX ? 'found' : (isNotGuaranteed ? 'blocked' : 'searching'));
+      const s4 = !goalX ? 'pending' : (leadToCenterReport.cornerB ? 'found' : (isNotGuaranteed ? 'blocked' : 'searching'));
+
+      const palette = {
+        found:     { icon: '✓', color: '#16a34a' },
+        searching: { icon: '⋯', color: '#2563eb' },
+        blocked:   { icon: '✗', color: '#dc2626' },
+        pending:   { icon: '○', color: '#9ca3af' },
+      };
+
+      function line(status, label, detail) {
+        const p = palette[status];
+        const detailPart = detail ? ` <span style="color:#555;">${detail}</span>` : '';
+        return `<div style="font-size:0.84em;line-height:1.7;"><span style="color:${p.color};font-weight:700;margin-right:4px;">${p.icon}</span><span style="font-weight:600;color:#374151;">${label}:</span>${detailPart}</div>`;
+      }
+
+      const aDetail = a ? `Goal ${a.goalNumber ?? '?'} · ${a.position} · walls (${a.wx ?? '?'}, ${a.wy ?? '?'})` : (s1 === 'searching' ? 'searching…' : null);
+      const rDetail = r ? `Goal ${r.goalNumber ?? '?'} · centroid (${r.cx}, ${r.cy})` : (s2 === 'blocked' ? 'blocked — no ref before cycle' : s2 === 'searching' ? 'searching…' : null);
+      const gxDetail = goalX ? `centroid (${goalX.centroid.x.toFixed(2)}, ${goalX.centroid.y.toFixed(2)}) · outside [A, Ref]` : (s3 === 'blocked' ? 'blocked — no witness before cycle' : s3 === 'searching' ? 'searching…' : null);
+      const cb = leadToCenterReport.cornerB;
+      const bDetail = cb ? `Goal ${cb.goalNumber ?? '?'} · ${cb.position} · walls (${cb.wx}, ${cb.wy})` : (s4 === 'blocked' ? 'blocked — episode never closed' : s4 === 'searching' ? 'searching…' : null);
+
+      return [
+        line(s1, 'Corner A', aDetail),
+        line(s2, 'Ref', rDetail),
+        line(s3, 'Goal X', gxDetail),
+        line(s4, 'Corner B', bDetail),
+      ].join('');
+    }
+
+    summary.innerHTML = buildPhasedHTML();
+  }
+
+  function recomputeLeadToSpaceReport() {
+    const states = playbackRobotStates.map((robotList, index) => snapshotState(robotList, index));
+
+    // Detect periodic cycle first so lead-to-center search can stop after the first loop.
+    const stateKeys = playbackRobotStates.map((robotList) =>
+      robotList.map(([c, x, y]) => `${c}:${x},${y}`).join('|')
+    );
+    const firstSeenAt = new Map();
+    let cycleStart = -1;
+    let cyclePeriod = -1;
+    let explorationCyclesFound = 0;
+
+    for (let i = 0; i < stateKeys.length; i++) {
+      const key = stateKeys[i];
+      if (firstSeenAt.has(key)) {
+        cycleStart = firstSeenAt.get(key);
+        cyclePeriod = i - cycleStart;
+        break;
+      }
+      firstSeenAt.set(key, i);
+    }
+
+    if (cycleStart >= 0 && cyclePeriod > 0) {
+      const anchor = stateKeys[cycleStart];
+      for (let i = cycleStart + 1; i < stateKeys.length; i++) {
+        const expected = stateKeys[cycleStart + ((i - cycleStart) % cyclePeriod)];
+        if (stateKeys[i] !== expected) break;
+        if (((i - cycleStart) % cyclePeriod) === 0 && stateKeys[i] === anchor) {
+          explorationCyclesFound++;
+        }
+      }
+    }
+    const explorationCycleDetected = explorationCyclesFound > 0;
+    const searchLimit = explorationCyclesFound >= 1 && cycleStart >= 0 && cyclePeriod > 0
+      ? Math.min(states.length, cycleStart + cyclePeriod + 1)
+      : states.length;
+    const searchStates = states.slice(0, searchLimit);
+
+    const finishedEpisodes = [];
+    let activeEpisode = null;
+
+    for (let i = 1; i < searchStates.length; i++) {
+      const prev = searchStates[i - 1];
+      const current = searchStates[i];
+
+      if (!activeEpisode) {
+        if (current.mode === 'corner') {
+          activeEpisode = {
+            fromCorner: current,
+            refState: null,
+            samples: [],
+            goalX: null,
+          };
+        }
+        continue;
+      }
+
+      // Lazy-set refState: first space (0-wall) state after leaving corner A
+      if (activeEpisode.refState === null && current.mode === 'space') {
+        activeEpisode.refState = current;
+      }
+      activeEpisode.samples.push(current);
+      if (activeEpisode.refState !== null && !activeEpisode.goalX &&
+          isInInversePart(current, activeEpisode.fromCorner, activeEpisode.refState)) {
+        activeEpisode.goalX = current;
+      }
+      if (current.mode !== 'corner') continue;
+
+      // Entered a new corner while tracking.
+      if (current.cornerKey !== activeEpisode.fromCorner.cornerKey) {
+        if (activeEpisode.refState !== null) {
+          // Ref already found: close this episode and start a fresh one from the new corner.
+          // Success requires a "goal X" sample that is in space mode AND on the inner side
+          // of the reference centroid (further from corner A, toward the centre).
+          const goalX = activeEpisode.samples.find(
+            (sample) => isInInversePart(sample, activeEpisode.fromCorner, activeEpisode.refState)
+          ) || null;
+          finishedEpisodes.push({
+            fromCorner: activeEpisode.fromCorner,
+            refState: activeEpisode.refState,
+            toCorner: current,
+            goalX,
+            success: Boolean(goalX),
+          });
+          // New episode: corner A = the corner we just entered, ref = null (search again).
+          activeEpisode = { fromCorner: current, refState: null, samples: [], goalX: null };
+        } else {
+          // No ref found yet: treat this new corner as the updated corner A, keep searching.
+          activeEpisode = { fromCorner: current, refState: null, samples: [], goalX: null };
+        }
+      }
+    }
+
+    const successfulEpisode = finishedEpisodes.find((episode) => episode.success) || null;
+
+    // Determine corner A and ref from the active or most-recent episode.
+    const episodeSource = activeEpisode ||
+      (finishedEpisodes.length > 0 ? finishedEpisodes[finishedEpisodes.length - 1] : null);
+    let cornerA = null;
+    let ref = null;
+
+    if (episodeSource) {
+      const cornerASource = episodeSource.fromCorner;
+      const si = cornerASource.stepIndex;
+      const goalNum = si > 0 && trajectories[si - 1] != null ? trajectories[si - 1].goalIndex + 1 : null;
+      cornerA = {
+        goalNumber: goalNum,
+        position: cornerKeyToPosition(cornerASource.cornerKey),
+        key: cornerASource.cornerKey,
+        wx: cornerASource.walls.x,
+        wy: cornerASource.walls.y,
+      };
+
+      const refSource = episodeSource.refState;
+      if (refSource) {
+        const rsi = refSource.stepIndex;
+        const rGoalNum = rsi > 0 && trajectories[rsi - 1] != null ? trajectories[rsi - 1].goalIndex + 1 : null;
+        ref = {
+          goalNumber: rGoalNum,
+          cx: refSource.centroid.x.toFixed(2),
+          cy: refSource.centroid.y.toFixed(2),
+        };
+      }
+    }
+
+    let cornerB = null;
+    if (successfulEpisode?.toCorner) {
+      const bSrc = successfulEpisode.toCorner;
+      const bsi = bSrc.stepIndex;
+      const bGoalNum = bsi > 0 && trajectories[bsi - 1] != null ? trajectories[bsi - 1].goalIndex + 1 : null;
+      cornerB = {
+        goalNumber: bGoalNum,
+        position: cornerKeyToPosition(bSrc.cornerKey),
+        key: bSrc.cornerKey,
+        wx: bSrc.walls.x,
+        wy: bSrc.walls.y,
+      };
+    }
+
+    leadToCenterReport = {
+      anySuccess: Boolean(successfulEpisode),
+      successfulEpisode,
+      activeEpisode,
+      finishedEpisodes,
+      cornerA,
+      cornerB,
+      ref,
+      explorationCyclesFound,
+      explorationCycleDetected,
+    };
+    updateLeadToSpacePanel();
+  }
+
+  function resetPlaybackRobotStates() {
+    playbackRobotStates = robots.length ? [cloneRobotList(robots)] : [];
+    leadToCenterFinalState = null;
+    recomputeLeadToSpaceReport();
+  }
+
+  function pushPlaybackRobotState(robotList) {
+    playbackRobotStates.push(cloneRobotList(robotList));
+    recomputeLeadToSpaceReport();
   }
 
   // --- Drawing ---
@@ -397,6 +832,7 @@
     trajectories = [];
     automatonCache = null;
     activeGoalIdx = -1;
+    resetPlaybackRobotStates();
     if (playing) stopPlay();
     render();
   }
@@ -437,9 +873,9 @@
 
   // --- Compute effective walls from boundary proximity ---
   // A boundary edge becomes a wall when any robot is within `vis` of it.
-  function computeEffectiveWall(vis) {
+  function computeEffectiveWall(vis, robotList = robots) {
     let xWall = null, yWall = null;
-    for (const [, x, y] of robots) {
+    for (const [, x, y] of robotList) {
       if (xWall === null && boundary.xmax - x <= vis && boundary.xmax - x >= 0) xWall = boundary.xmax;
       if (xWall === null && x - boundary.xmin <= vis && x - boundary.xmin >= 0) xWall = boundary.xmin;
       if (yWall === null && boundary.ymax - y <= vis && boundary.ymax - y >= 0) yWall = boundary.ymax;
@@ -658,6 +1094,7 @@
       automatonCache = null;
       robots = result.robots;
       activeGoalIdx = result.goalIndex;
+      pushPlaybackRobotState(result.robots);
       const peek = tryNextStep();
       const showBox = document.getElementById('show-goal-box')?.checked !== false;
       pendingGoalBox = (showBox && peek && !peek.duplicate) ? { corners: peek.goalBox.corners, goalIndex: peek.goalIndex } : null;
@@ -702,6 +1139,8 @@
     automatonCache = null; // rebuild automaton trace on next draw
     activeGoalIdx = -1;
     pendingGoalBox = null;
+    if (playbackRobotStates.length > 1) playbackRobotStates.pop();
+    recomputeLeadToSpaceReport();
     // Animate backwards (swap from/to) — reuse same function
     animateStep(from, robots, -1, null);
     const info = document.getElementById('next-step-info');
@@ -1077,6 +1516,12 @@
       if (showAutomaton) { automatonCache = null; drawAutomaton(); }
     });
 
+    const leadChk = document.getElementById('lead-center-chk');
+    if (leadChk) leadChk.addEventListener('change', () => {
+      leadToCenterEnabled = leadChk.checked;
+      updateLeadToSpacePanel();
+    });
+
     // Sync initial checkbox states into JS variables (in case checkboxes are pre-checked in HTML)
     if (ghostChk) {
       ghostMode = ghostChk.checked;
@@ -1095,6 +1540,10 @@
         area.style.alignItems = 'center';
       }
       if (showAutomaton) { automatonCache = null; drawAutomaton(); }
+    }
+    if (leadChk) {
+      leadToCenterEnabled = leadChk.checked;
+      updateLeadToSpacePanel();
     }
 
     const gridSizeSel = document.getElementById('grid-size-select');
@@ -1115,6 +1564,7 @@
       const dispEl = document.getElementById('visibility-display');
       if (dispEl) dispEl.textContent = val;
       populateGridSizeSelect();
+      recomputeLeadToSpaceReport();
     }
     syncVisDisplay();
     const visRangeInput = document.getElementById('visibility_range');

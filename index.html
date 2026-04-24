@@ -992,6 +992,10 @@
                     Automaton
                   </label>
                   <label class="mgc-chk-label">
+                    <input type="checkbox" id="lead-center-chk" checked style="accent-color:#0f766e;">
+                    Lead to center
+                  </label>
+                  <label class="mgc-chk-label">
                     <input type="checkbox" id="trail-mode-chk" style="accent-color:#e65100;">
                     Trail
                   </label>
@@ -1009,13 +1013,37 @@
               </div>
 
               <!-- Grid Canvas -->
-              <div id="canvas-area" style="flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 10px; overflow: auto; min-height: 320px; flex-wrap: wrap;">
-                <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff; flex-shrink: 0;">
-                  <canvas id="movement-grid-canvas" width="300" height="300"></canvas>
+              <div id="canvas-area" style="flex: 1; overflow: auto; min-height: 320px;">
+                <div style="display: flex; flex-direction: row; align-items: flex-start; justify-content: center; gap: 10px; flex-wrap: wrap; min-width: min-content;">
+                  <div id="movement-grid-container" style="border: 3px solid #000; border-radius: 4px; background: #fff; flex-shrink: 0;">
+                    <canvas id="movement-grid-canvas" width="300" height="300"></canvas>
+                  </div>
+                  <div id="automaton-container" style="display:none; border: 1px solid #cce5ff; border-radius: 4px; background: #f8fbff; flex-shrink: 0;">
+                    <canvas id="automaton-canvas" width="280" height="280"></canvas>
+                  </div>
                 </div>
-                <div id="automaton-container" style="display:none; border: 1px solid #cce5ff; border-radius: 4px; background: #f8fbff; flex-shrink: 0;">
-                  <canvas id="automaton-canvas" width="280" height="280"></canvas>
+              </div>
+
+              <div
+                id="lead-center-panel"
+                style="display:none; margin-top:10px; padding:10px 12px; border:1px solid #f5c2c7; border-radius:8px; background:linear-gradient(180deg,#fff8f8 0%,#fff1f2 100%); box-shadow:0 1px 3px rgba(185,28,28,0.08);"
+              >
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                  <div id="lead-center-title" style="font-size:0.9em; font-weight:700; color:#991b1b; letter-spacing:0.01em;">Lead-to-center predicate</div>
+                  <div
+                    id="lead-center-state"
+                    style="font-size:0.72em; font-weight:700; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; border-radius:999px; padding:3px 9px; text-transform:uppercase; letter-spacing:0.06em;"
+                  >Idle</div>
                 </div>
+                <div
+                  id="lead-center-summary"
+                  style="margin-top:8px; font-family:monospace; font-size:0.76em; line-height:1.45; color:#7f1d1d; min-height:2.6em;"
+                >Enable the predicate to inspect corner-to-corner progress on this page.</div>
+              </div>
+
+              <!-- Exploration Cycles -->
+              <div id="exploration-cycles-display" style="margin-top:8px; font-size:0.82em; font-family:monospace; color:#374151;">
+                Exploration cycles: <strong id="exploration-cycles-count">0</strong>
               </div>
 
               <!-- Playback Controls -->
