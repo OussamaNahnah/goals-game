@@ -104,17 +104,21 @@
     // Corner/wall/space is determined by the walls of the goal that was executed to reach this state.
     // A corner = the executed goal has both a vertical wall (x) AND a horizontal wall (y).
     const traj = stepIndex > 0 ? trajectories[stepIndex - 1] : null;
-    const goalCfg = traj != null ? (window.activeSimulationConfigs?.[traj.goalIndex] ?? null) : null;
-    let gx = null, gy = null;
-    if (goalCfg?.walls) {
-      for (const w of goalCfg.walls) {
-        if (w.type === 'vertical')   gx = w.x1;
-        if (w.type === 'horizontal') gy = w.y1;
+    let gx = traj?.wallX ?? null;
+    let gy = traj?.wallY ?? null;
+    // Backward-compatible fallback for old trajectory entries without wallX/wallY.
+    if ((gx === null && gy === null) && traj != null) {
+      const goalCfg = window.activeSimulationConfigs?.[traj.goalIndex] ?? null;
+      if (goalCfg?.walls) {
+        for (const w of goalCfg.walls) {
+          if (w.type === 'vertical')   gx = w.x1 <= 0 ? boundary.xmin : boundary.xmax;
+          if (w.type === 'horizontal') gy = w.y1 <= 0 ? boundary.ymin : boundary.ymax;
+        }
       }
     }
     const walls = {
-      x: gx !== null ? (gx <= 0 ? boundary.xmin : boundary.xmax) : null,
-      y: gy !== null ? (gy <= 0 ? boundary.ymin : boundary.ymax) : null,
+      x: gx,
+      y: gy,
     };
     const wallCount = (walls.x !== null ? 1 : 0) + (walls.y !== null ? 1 : 0);
     return {
@@ -962,19 +966,19 @@
             const rotStart = adjStart.map(([c, x, y]) => { const [rx, ry] = rotatePoint(x, y, angle); return [c, rx, ry]; });
             const rotEnd   = adjEnd.map(([c, x, y])   => { const [rx, ry] = rotatePoint(x, y, angle); return [c, rx, ry]; });
             const [rotGoalXWall, rotGoalYWall] = rotateWalls(gXWallAdj, gYWallAdj, angle);
+            const absXWall = rotGoalXWall !== null ? (refX + rotGoalXWall) : null;
+            const absYWall = rotGoalYWall !== null ? (refY + rotGoalYWall) : null;
 
             // Wall check: if the goal requires a wall, its absolute position on the
             // master grid (refX + relative wall) must coincide with a boundary edge.
             // No visibility / proximity needed — purely geometric.
             let xWallOk = true;
             if (rotGoalXWall !== null) {
-              const abs = refX + rotGoalXWall;
-              xWallOk = (abs === boundary.xmin || abs === boundary.xmax);
+              xWallOk = (absXWall === boundary.xmin || absXWall === boundary.xmax);
             }
             let yWallOk = true;
             if (rotGoalYWall !== null) {
-              const abs = refY + rotGoalYWall;
-              yWallOk = (abs === boundary.ymin || abs === boundary.ymax);
+              yWallOk = (absYWall === boundary.ymin || absYWall === boundary.ymax);
             }
             if (!xWallOk || !yWallOk) continue;
 
@@ -1013,6 +1017,8 @@
 
             levelMatches.push({
               robots: newRobots, goalIndex: gi, rotation: angle, wallScore,
+              wallX: absXWall,
+              wallY: absYWall,
               goalBox: { corners: goalBoxCorners, goalIndex: gi },
             });
           }
@@ -1090,7 +1096,7 @@
       if (history.length >= HISTORY_MAX) history.shift();
       history.push(from);
       const segments = from.map((r, i) => ({ color: r[0], fx: r[1], fy: r[2], tx: result.robots[i][1], ty: result.robots[i][2] }));
-      trajectories.push({ goalIndex: result.goalIndex, segments });
+      trajectories.push({ goalIndex: result.goalIndex, segments, wallX: result.wallX ?? null, wallY: result.wallY ?? null });
       automatonCache = null;
       robots = result.robots;
       activeGoalIdx = result.goalIndex;
